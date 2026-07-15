@@ -417,6 +417,7 @@ Rewrite README.md as the portfolio front page:
 - Measured metrics table from docs/PERF.md: time-to-first-cell, APK size (fill after T26), device.
 - GIF slots wired to owner-provided recordings.
 - Fixture philosophy paragraph + roadmap (post-v1 items from TECH_SPEC §14).
+- Preserve and integrate the existing "How this was built" section (already in README.md; keep its content and links intact).
 
 Acceptance: README renders cleanly on GitHub; no placeholder text left except the APK size (T26).
 ```
