@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "com.tikoncha.katak.feature.viewer"
+    namespace = "com.tikoncha.darcha.feature.viewer"
     compileSdk = 35
 
     defaultConfig {

@@ -1,4 +1,4 @@
-# CLAUDE.md — Katak (XLSX Viewer for Android)
+# CLAUDE.md — Darcha (XLSX Viewer for Android)
 
 ## What this project is
 

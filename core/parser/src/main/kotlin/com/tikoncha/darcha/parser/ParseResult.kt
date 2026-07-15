@@ -1,6 +1,6 @@
-package com.tikoncha.katak.parser
+package com.tikoncha.darcha.parser
 
-import com.tikoncha.katak.model.ErrorKind
+import com.tikoncha.darcha.model.ErrorKind
 
 /**
  * The outcome of a parser operation.

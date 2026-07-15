@@ -1,4 +1,4 @@
-package com.tikoncha.katak
+package com.tikoncha.darcha
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -13,9 +13,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 
 /**
- * Placeholder entry point for the Katak skeleton (T0).
+ * Placeholder entry point for the Darcha skeleton (T0).
  *
- * Renders a single "Katak" label. The real viewer UI (file picker, grid) is
+ * Renders a single "Darcha" label. The real viewer UI (file picker, grid) is
  * introduced in milestone M2; this activity only proves the module graph and
  * Compose toolchain build correctly.
  */
@@ -25,7 +25,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             MaterialTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    KatakPlaceholder()
+                    DarchaPlaceholder()
                 }
             }
         }
@@ -33,9 +33,9 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-private fun KatakPlaceholder() {
+private fun DarchaPlaceholder() {
     Text(
-        text = "Katak",
+        text = "Darcha",
         modifier = Modifier
             .fillMaxSize()
             .wrapContentSize(),
@@ -44,8 +44,8 @@ private fun KatakPlaceholder() {
 
 @Preview(showBackground = true)
 @Composable
-private fun KatakPlaceholderPreview() {
+private fun DarchaPlaceholderPreview() {
     MaterialTheme {
-        KatakPlaceholder()
+        DarchaPlaceholder()
     }
 }

@@ -1,5 +1,5 @@
 // Root build file. Plugins are declared here (without applying) so subprojects
-// can apply them from the version catalog. Katak has no root-level source.
+// can apply them from the version catalog. Darcha has no root-level source.
 plugins {
     alias(libs.plugins.android.application) apply false
     alias(libs.plugins.android.library) apply false

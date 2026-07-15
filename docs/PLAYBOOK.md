@@ -1,4 +1,4 @@
-# Katak — Full Build Playbook (M1 → M4, T0 → T26)
+# Darcha — Full Build Playbook (M1 → M4, T0 → T26)
 
 Every task below is a ready-to-paste Claude Code prompt. **One task = one session.** This file replaces `M1_PLAYBOOK.md`.
 
@@ -33,10 +33,10 @@ Prerequisites in repo: `CLAUDE.md` (root), `docs/TECH_SPEC.md`, this file.
 ## T0 — Project skeleton
 
 ```text
-Create the Gradle skeleton for the "Katak" project per docs/TECH_SPEC.md §6.
+Create the Gradle skeleton for the "Darcha" project per docs/TECH_SPEC.md §6.
 
 Modules:
-- :app — minimal Compose activity showing the text "Katak" (placeholder only)
+- :app — minimal Compose activity showing the text "Darcha" (placeholder only)
 - :feature:viewer — empty Android library module (Compose enabled)
 - :core:model — pure Kotlin JVM module (kotlin("jvm") plugin)
 - :core:parser — pure Kotlin JVM module, depends only on :core:model
@@ -371,7 +371,7 @@ Acceptance: zooming big-50k stays smooth; focal stability verified by eye on mer
 ## T21 — ACTION_VIEW intent
 
 ```text
-- Manifest intent filters so file managers open .xlsx with Katak: mime application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, plus the octet-stream/wildcard + .xlsx-extension fallback pattern (document its limits in a code comment).
+- Manifest intent filters so file managers open .xlsx with Darcha: mime application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, plus the octet-stream/wildcard + .xlsx-extension fallback pattern (document its limits in a code comment).
 - Cold start from intent routes straight to the viewer; failures land on the error screen, not a crash.
 
 Acceptance: opening from the system Files app works on a real device.

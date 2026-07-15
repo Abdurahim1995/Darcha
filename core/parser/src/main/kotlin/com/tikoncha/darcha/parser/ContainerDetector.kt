@@ -1,6 +1,6 @@
-package com.tikoncha.katak.parser
+package com.tikoncha.darcha.parser
 
-import com.tikoncha.katak.model.ErrorKind
+import com.tikoncha.darcha.model.ErrorKind
 import java.io.File
 import java.io.IOException
 import java.io.InputStream

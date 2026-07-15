@@ -20,7 +20,7 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Katak"
+rootProject.name = "darcha"
 
 include(":app")
 include(":feature:viewer")

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    No <uses-permission> here — Katak has NO INTERNET permission by design
+    No <uses-permission> here — Darcha has NO INTERNET permission by design
     (TECH_SPEC §5). App icon and a proper Material theme arrive in T24; for the
     skeleton we use a framework theme so no themes.xml is required.
 -->

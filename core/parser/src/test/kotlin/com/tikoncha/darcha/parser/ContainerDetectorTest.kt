@@ -1,6 +1,6 @@
-package com.tikoncha.katak.parser
+package com.tikoncha.darcha.parser
 
-import com.tikoncha.katak.model.ErrorKind
+import com.tikoncha.darcha.model.ErrorKind
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test

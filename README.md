@@ -1,4 +1,4 @@
-# Katak — XLSX Viewer for Android
+# Darcha — XLSX Viewer for Android
 
 A fast, private, ad-free Android viewer for `.xlsx` files. Opens spreadsheets
 instantly, works fully offline, and ships without the `INTERNET` permission.

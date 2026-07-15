@@ -1,4 +1,4 @@
-# Katak — XLSX Viewer for Android
+# Darcha — XLSX Viewer for Android
 
 **Technical Specification · v1.0**
 
@@ -7,13 +7,13 @@
 | Status | Approved — ready for M1 |
 | Owner | Tikoncha |
 | Last updated | 2026-07-14 |
-| Working title | **Katak** (*"cell" in Uzbek*) |
+| Working title | **Darcha** (*"little window" in Uzbek*) |
 
 ---
 
 ## 1. Summary
 
-Katak is a fast, private, ad-free Android viewer for `.xlsx` files. It opens spreadsheets instantly, works fully offline, ships without the `INTERNET` permission, and stays under 5 MB.
+Darcha is a fast, private, ad-free Android viewer for `.xlsx` files. It opens spreadsheets instantly, works fully offline, ships without the `INTERNET` permission, and stays under 5 MB.
 
 This is a portfolio project. Its primary purpose is to demonstrate senior-level Android engineering: a hand-written streaming parser for a binary-adjacent format, a custom 60 fps Canvas renderer, clean MVI architecture, and disciplined fixture-driven testing.
 

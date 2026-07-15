@@ -44,7 +44,7 @@ def _new_workbook(first_sheet: str = "Sheet1") -> Workbook:
     """Create a workbook with a single named sheet and pinned properties."""
     wb = Workbook()
     wb.active.title = first_sheet
-    wb.properties.creator = "Katak fixture generator"
+    wb.properties.creator = "Darcha fixture generator"
     wb.properties.created = _PINNED
     wb.properties.modified = _PINNED
     return wb
@@ -122,7 +122,7 @@ def gen_strings_shared() -> None:
     core = """
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-  <dc:creator>Katak fixture generator</dc:creator>
+  <dc:creator>Darcha fixture generator</dc:creator>
   <dcterms:created xsi:type="dcterms:W3CDTF">2024-01-01T00:00:00Z</dcterms:created>
   <dcterms:modified xsi:type="dcterms:W3CDTF">2024-01-01T00:00:00Z</dcterms:modified>
 </cp:coreProperties>
@@ -130,7 +130,7 @@ def gen_strings_shared() -> None:
     app = """
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties">
-  <Application>Katak fixture generator</Application>
+  <Application>Darcha fixture generator</Application>
 </Properties>
 """
     workbook = """

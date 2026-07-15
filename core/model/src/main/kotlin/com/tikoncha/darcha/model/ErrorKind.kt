@@ -1,4 +1,4 @@
-package com.tikoncha.katak.model
+package com.tikoncha.darcha.model
 
 /**
  * The closed taxonomy of user-facing failure reasons the parser can surface
@@ -23,12 +23,12 @@ public sealed interface ErrorKind {
 
     /**
      * The file is an OLE/CFB compound document — a password-protected `.xlsx`
-     * or a legacy `.xls`. Katak cannot decrypt or read these (TECH_SPEC §4).
+     * or a legacy `.xls`. Darcha cannot decrypt or read these (TECH_SPEC §4).
      */
     public data class Encrypted(override val message: String? = null) : ErrorKind
 
     /**
-     * A recognizable container that Katak deliberately does not support
+     * A recognizable container that Darcha deliberately does not support
      * (e.g. `.ods`, `.xlsb`). Distinct from [Corrupted]: the file is intact,
      * just out of scope (TECH_SPEC §4 non-goals).
      */

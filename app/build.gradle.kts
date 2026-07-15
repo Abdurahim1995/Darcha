@@ -5,11 +5,11 @@ plugins {
 }
 
 android {
-    namespace = "com.tikoncha.katak"
+    namespace = "com.tikoncha.darcha"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.tikoncha.katak"
+        applicationId = "com.tikoncha.darcha"
         minSdk = 26
         targetSdk = 35
         versionCode = 1
