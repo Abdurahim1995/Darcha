@@ -8,7 +8,7 @@ A fast, private, ad-free Android viewer for `.xlsx` files. Portfolio project.
 
 ## Hard rules — never break these
 
-1. **No third-party runtime dependencies** in `:core:model` and `:core:parser`. Test-only dependencies are allowed (JUnit, kxml2).
+1. **No third-party _runtime_ dependencies** in `:core:model` and `:core:parser` — nothing these modules use is packaged into the APK. Allowed: JUnit (test-only); and `kxml2` in `:core:parser` declared `compileOnly` (it supplies the `org.xmlpull.v1` XmlPullParser API, which the JDK lacks — Android provides the implementation at runtime, so it is never shipped) plus `testImplementation` (a real parser implementation for pure-JVM tests).
 2. **No `INTERNET` permission**, ever. Privacy is a product feature.
 3. **No Android imports** (`android.*`, `androidx.*`) inside `:core:*` modules — they are pure JVM Kotlin.
 4. Module dependency direction is one-way:
