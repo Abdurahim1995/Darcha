@@ -1,5 +1,7 @@
 # Darcha — XLSX Viewer for Android
 
+[![CI](https://github.com/Abdurahim1995/Darcha/actions/workflows/ci.yml/badge.svg)](https://github.com/Abdurahim1995/Darcha/actions/workflows/ci.yml)
+
 A fast, private, ad-free Android viewer for `.xlsx` files. Opens spreadsheets
 instantly, works fully offline, and ships without the `INTERNET` permission.
 

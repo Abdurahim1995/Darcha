@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  core-tests:
+    name: Core parser tests (pure JVM)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # Pure-JVM parser tests — no emulator, no Android SDK needed to execute
+      # (the :app / :feature:viewer modules configure via the runner's
+      # preinstalled Android SDK, but their tasks are not run here).
+      - name: Run :core:model and :core:parser tests
+        run: ./gradlew :core:model:test :core:parser:test --no-daemon
