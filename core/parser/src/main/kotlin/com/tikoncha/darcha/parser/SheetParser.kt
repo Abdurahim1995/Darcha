@@ -1,9 +1,13 @@
 package com.tikoncha.darcha.parser
 
+import com.tikoncha.darcha.model.CellRange
 import com.tikoncha.darcha.model.CellValue
 import com.tikoncha.darcha.model.ErrorKind
+import com.tikoncha.darcha.model.FrozenPanes
 import com.tikoncha.darcha.model.Row
 import com.tikoncha.darcha.model.SheetData
+import com.tikoncha.darcha.model.SheetLayout
+import com.tikoncha.darcha.model.Worksheet
 import org.xmlpull.v1.XmlPullParser
 import org.xmlpull.v1.XmlPullParserException
 import java.io.IOException
@@ -11,21 +15,23 @@ import java.io.InputStream
 import java.util.zip.ZipFile
 
 /**
- * Parses a worksheet part (`xl/worksheets/sheetN.xml`) into the sparse
- * [SheetData] model (TECH_SPEC §7 step 5, §8). Streaming only — no DOM.
+ * Parses a worksheet part (`xl/worksheets/sheetN.xml`) into a [Worksheet]: the
+ * sparse cell [SheetData] plus its [SheetLayout] (TECH_SPEC §7 step 5, §8, §9).
+ * A single streaming pass collects both — no DOM, and large sheets are read once.
  *
  * Cell types: `n` (default, number), `s` (shared string index), `inlineStr`
  * (flattened `<is>` text), `b` (boolean), `e` (error), `str` (formula string
  * result). Formulas (`<f>`) are skipped — only the cached `<v>` is read. The
- * `<dimension>` element is ignored; only real `<c>` elements are trusted.
+ * `<dimension>` element is ignored; only real `<c>` elements are trusted. Only
+ * cells with a value are stored — a styled-but-empty `<c>` is dropped in v1.
  *
- * Only cells with a value are stored — a styled-but-empty `<c>` is dropped in v1
- * ("never allocate for empty cells", §8).
+ * Layout: `<cols>` custom widths, `<sheetFormatPr>` defaults, `<row>` heights,
+ * `<mergeCells>`, and a frozen `<pane>`.
  */
 internal object SheetParser {
 
-    /** Read the worksheet at [partPath] in [zip] into a [SheetData]. */
-    fun parse(zip: ZipFile, partPath: String): ParseResult<SheetData> =
+    /** Read the worksheet at [partPath] in [zip] into a [Worksheet]. */
+    fun parse(zip: ZipFile, partPath: String): ParseResult<Worksheet> =
         try {
             val entry = zip.getEntry(partPath)
                 ?: return ParseResult.Err(ErrorKind.Corrupted("missing worksheet part '$partPath'"))
@@ -36,17 +42,27 @@ internal object SheetParser {
             ParseResult.Err(ErrorKind.Corrupted("could not read worksheet '$partPath': ${e.message}"))
         }
 
-    /** Stream-parse a worksheet document into [SheetData]. */
-    internal fun parseSheet(input: InputStream): SheetData {
+    /** Stream-parse a worksheet document into a [Worksheet]. */
+    internal fun parseSheet(input: InputStream): Worksheet {
         val parser = Xml.newPullParser(input)
         val rows = LinkedHashMap<Int, Row>()
 
+        // Layout accumulators.
+        val columnWidths = HashMap<Int, Double>()
+        val rowHeights = HashMap<Int, Double>()
+        val merges = ArrayList<CellRange>()
+        var frozenPanes = FrozenPanes.NONE
+        var defaultColWidth = SheetLayout.DEFAULT_COL_WIDTH
+        var defaultRowHeight = SheetLayout.DEFAULT_ROW_HEIGHT
+
+        // Per-row cell accumulators.
         var rowIndex = -1
         var cols = ArrayList<Int>()
         var vals = ArrayList<CellValue>()
         var styleIds = ArrayList<Int>()
         var nextCol = 0
 
+        // Per-cell state.
         var cellCol = 0
         var cellStyle = 0
         var cellType: String? = null
@@ -59,9 +75,22 @@ internal object SheetParser {
         while (event != XmlPullParser.END_DOCUMENT) {
             when (event) {
                 XmlPullParser.START_TAG -> when (parser.name) {
+                    "sheetFormatPr" -> {
+                        parser.getAttributeValue(null, "defaultColWidth")?.toDoubleOrNull()
+                            ?.let { defaultColWidth = it }
+                        parser.getAttributeValue(null, "defaultRowHeight")?.toDoubleOrNull()
+                            ?.let { defaultRowHeight = it }
+                    }
+                    "col" -> readCol(parser, columnWidths)
+                    "pane" -> readPane(parser)?.let { frozenPanes = it }
+                    "mergeCell" -> parser.getAttributeValue(null, "ref")
+                        ?.let { merges.add(CellRef.parseRange(it)) }
+
                     "row" -> {
                         rowIndex = parser.getAttributeValue(null, "r")?.toIntOrNull()?.minus(1)
                             ?: (rowIndex + 1)
+                        parser.getAttributeValue(null, "ht")?.toDoubleOrNull()
+                            ?.let { rowHeights[rowIndex] = it }
                         cols = ArrayList()
                         vals = ArrayList()
                         styleIds = ArrayList()
@@ -103,7 +132,35 @@ internal object SheetParser {
             }
             event = parser.next()
         }
-        return SheetData(rows)
+
+        val layout = SheetLayout(
+            columnWidths = columnWidths,
+            rowHeights = rowHeights,
+            defaultColWidth = defaultColWidth,
+            defaultRowHeight = defaultRowHeight,
+            merges = merges,
+            frozenPanes = frozenPanes,
+        )
+        return Worksheet(SheetData(rows), layout)
+    }
+
+    /** Record a `<col>` element's custom width across its `min..max` range. */
+    private fun readCol(parser: XmlPullParser, into: MutableMap<Int, Double>) {
+        val customWidth = parser.getAttributeValue(null, "customWidth")
+        val isCustom = customWidth == "1" || customWidth.equals("true", ignoreCase = true)
+        val width = parser.getAttributeValue(null, "width")?.toDoubleOrNull()
+        if (!isCustom || width == null) return
+        val min = parser.getAttributeValue(null, "min")?.toIntOrNull() ?: return
+        val max = parser.getAttributeValue(null, "max")?.toIntOrNull() ?: return
+        for (column in min..max) into[column - 1] = width // min/max are 1-based
+    }
+
+    /** Read a `<pane>` element, returning frozen panes only when `state="frozen"`. */
+    private fun readPane(parser: XmlPullParser): FrozenPanes? {
+        if (parser.getAttributeValue(null, "state") != "frozen") return null
+        val xSplit = parser.getAttributeValue(null, "xSplit")?.toIntOrNull() ?: 0
+        val ySplit = parser.getAttributeValue(null, "ySplit")?.toIntOrNull() ?: 0
+        return FrozenPanes(frozenCols = xSplit, frozenRows = ySplit)
     }
 
     /** Build a [CellValue] from the cell's `t` type and captured text buffers. */

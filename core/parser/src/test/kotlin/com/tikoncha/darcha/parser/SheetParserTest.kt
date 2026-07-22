@@ -67,7 +67,7 @@ class SheetParserTest {
               </row>
             </sheetData></worksheet>
         """.trimIndent()
-        val sheet = SheetParser.parseSheet(bytes(xml))
+        val sheet = SheetParser.parseSheet(bytes(xml)).data
         assertEquals(CellValue.Error("#DIV/0!"), sheet.cellAt(0, 0))
         assertEquals(CellValue.InlineText("result"), sheet.cellAt(0, 1)) // <f> skipped, cached <v> read
         assertEquals(CellValue.InlineText("Hello World"), sheet.cellAt(0, 2))
@@ -80,7 +80,7 @@ class SheetParserTest {
               <row r="1"><c r="A1"><f>1+1</f><v>2</v></c></row>
             </sheetData></worksheet>
         """.trimIndent()
-        val sheet = SheetParser.parseSheet(bytes(xml))
+        val sheet = SheetParser.parseSheet(bytes(xml)).data
         assertEquals(CellValue.Number(2.0), sheet.cellAt(0, 0))
     }
 
@@ -91,7 +91,7 @@ class SheetParserTest {
               <row r="1"><c r="A1" s="3"/><c r="B1"><v>5</v></c></row>
             </sheetData></worksheet>
         """.trimIndent()
-        val sheet = SheetParser.parseSheet(bytes(xml))
+        val sheet = SheetParser.parseSheet(bytes(xml)).data
         assertEquals(1, sheet.cellCount)
         assertNull(sheet.cellAt(0, 0))
         assertEquals(CellValue.Number(5.0), sheet.cellAt(0, 1))
@@ -104,7 +104,7 @@ class SheetParserTest {
               <row r="1"><c r="C1"><v>3</v></c><c r="A1"><v>1</v></c></row>
             </sheetData></worksheet>
         """.trimIndent()
-        val sheet = SheetParser.parseSheet(bytes(xml))
+        val sheet = SheetParser.parseSheet(bytes(xml)).data
         assertEquals(intArrayOf(0, 2).toList(), sheet.row(0)!!.columns.toList())
         assertEquals(CellValue.Number(1.0), sheet.cellAt(0, 0))
         assertEquals(CellValue.Number(3.0), sheet.cellAt(0, 2))
@@ -115,7 +115,7 @@ class SheetParserTest {
     private fun parseFixture(name: String, part: String): SheetData =
         fixtureZip(name).use { zip ->
             when (val result = SheetParser.parse(zip, part)) {
-                is ParseResult.Ok -> result.value
+                is ParseResult.Ok -> result.value.data
                 is ParseResult.Err -> error("expected Ok for $name but got Err(${result.kind})")
             }
         }

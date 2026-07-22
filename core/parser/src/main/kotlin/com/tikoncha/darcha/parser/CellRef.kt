@@ -1,5 +1,7 @@
 package com.tikoncha.darcha.parser
 
+import com.tikoncha.darcha.model.CellRange
+
 /**
  * Conversions for A1-style cell references (e.g. `AA100`) to 0-based
  * coordinates (TECH_SPEC §7 step 5).
@@ -32,5 +34,30 @@ internal object CellRef {
         var i = 0
         while (i < ref.length && !ref[i].isDigit()) i++
         return (ref.substring(i).toIntOrNull() ?: 1) - 1
+    }
+
+    /**
+     * Parse an A1-style range like `A1:C3` into a normalized [CellRange] (start
+     * ≤ end on both axes). A single reference like `A1` yields a 1×1 range.
+     */
+    fun parseRange(ref: String): CellRange {
+        val colon = ref.indexOf(':')
+        if (colon < 0) {
+            val row = rowIndexOf(ref)
+            val col = columnIndexOf(ref)
+            return CellRange(row, col, row, col)
+        }
+        val start = ref.substring(0, colon)
+        val end = ref.substring(colon + 1)
+        val r1 = rowIndexOf(start)
+        val c1 = columnIndexOf(start)
+        val r2 = rowIndexOf(end)
+        val c2 = columnIndexOf(end)
+        return CellRange(
+            startRow = minOf(r1, r2),
+            startCol = minOf(c1, c2),
+            endRow = maxOf(r1, r2),
+            endCol = maxOf(c1, c2),
+        )
     }
 }

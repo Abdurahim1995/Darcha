@@ -1,9 +1,10 @@
 package com.tikoncha.darcha.parser
 
+import com.tikoncha.darcha.model.CellRange
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
-/** Unit tests for A1-reference → 0-based coordinate conversion. */
+/** Unit tests for A1-reference → 0-based coordinate and range conversion. */
 class CellRefTest {
 
     @Test
@@ -29,5 +30,22 @@ class CellRefTest {
         assertEquals(4, CellRef.rowIndexOf("C5"))
         assertEquals(99, CellRef.rowIndexOf("AA100"))
         assertEquals(1_048_575, CellRef.rowIndexOf("XFD1048576")) // Excel's last row
+    }
+
+    @Test
+    fun parseRange_normalizesToInclusiveBounds() {
+        assertEquals(CellRange(0, 0, 0, 2), CellRef.parseRange("A1:C1"))
+        assertEquals(CellRange(1, 0, 3, 0), CellRef.parseRange("A2:A4"))
+        assertEquals(CellRange(1, 1, 2, 2), CellRef.parseRange("B2:C3"))
+    }
+
+    @Test
+    fun parseRange_singleCellIsOneByOne() {
+        assertEquals(CellRange(4, 2, 4, 2), CellRef.parseRange("C5"))
+    }
+
+    @Test
+    fun parseRange_reversedBoundsAreOrdered() {
+        assertEquals(CellRange(0, 0, 0, 2), CellRef.parseRange("C1:A1"))
     }
 }
