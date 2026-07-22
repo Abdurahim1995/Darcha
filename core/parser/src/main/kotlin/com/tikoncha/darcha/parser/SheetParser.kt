@@ -30,22 +30,35 @@ import java.util.zip.ZipFile
  */
 internal object SheetParser {
 
-    /** Read the worksheet at [partPath] in [zip] into a [Worksheet]. */
-    fun parse(zip: ZipFile, partPath: String): ParseResult<Worksheet> =
+    /**
+     * Read the worksheet at [partPath] in [zip] into a [Worksheet], invoking
+     * [onChunk] with each batch of up to [chunkSize] rows as they accumulate.
+     */
+    fun parse(
+        zip: ZipFile,
+        partPath: String,
+        chunkSize: Int = 200,
+        onChunk: (RowsChunk) -> Unit = {},
+    ): ParseResult<Worksheet> =
         try {
             val entry = zip.getEntry(partPath)
                 ?: return ParseResult.Err(ErrorKind.Corrupted("missing worksheet part '$partPath'"))
-            zip.getInputStream(entry).use { ParseResult.Ok(parseSheet(it)) }
+            zip.getInputStream(entry).use { ParseResult.Ok(parseSheet(it, chunkSize, onChunk)) }
         } catch (e: XmlPullParserException) {
             ParseResult.Err(ErrorKind.Corrupted("malformed worksheet '$partPath': ${e.message}"))
         } catch (e: IOException) {
             ParseResult.Err(ErrorKind.Corrupted("could not read worksheet '$partPath': ${e.message}"))
         }
 
-    /** Stream-parse a worksheet document into a [Worksheet]. */
-    internal fun parseSheet(input: InputStream): Worksheet {
+    /** Stream-parse a worksheet document into a [Worksheet], emitting row chunks. */
+    internal fun parseSheet(
+        input: InputStream,
+        chunkSize: Int = 200,
+        onChunk: (RowsChunk) -> Unit = {},
+    ): Worksheet {
         val parser = Xml.newPullParser(input)
         val rows = LinkedHashMap<Int, Row>()
+        val pending = LinkedHashMap<Int, Row>()
 
         // Layout accumulators.
         val columnWidths = HashMap<Int, Double>()
@@ -127,11 +140,20 @@ internal object SheetParser {
                         }
                         nextCol = cellCol + 1
                     }
-                    "row" -> if (cols.isNotEmpty()) rows[rowIndex] = buildRow(cols, vals, styleIds)
+                    "row" -> if (cols.isNotEmpty()) {
+                        val built = buildRow(cols, vals, styleIds)
+                        rows[rowIndex] = built
+                        pending[rowIndex] = built
+                        if (pending.size >= chunkSize) {
+                            onChunk(RowsChunk(LinkedHashMap(pending), rows.size))
+                            pending.clear()
+                        }
+                    }
                 }
             }
             event = parser.next()
         }
+        if (pending.isNotEmpty()) onChunk(RowsChunk(pending, rows.size))
 
         val layout = SheetLayout(
             columnWidths = columnWidths,
