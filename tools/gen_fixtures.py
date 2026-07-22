@@ -16,7 +16,11 @@ Setup:
     pip install openpyxl        # tested with openpyxl 3.1.5
 
 Usage:
-    python3 tools/gen_fixtures.py
+    python3 tools/gen_fixtures.py          # the 8 small golden fixtures
+    python3 tools/gen_fixtures.py big       # big-50k-rows.xlsx (M2 perf target)
+
+The 50k-row perf fixture is producer-agnostic (scale, not producer variance) and
+is generated separately because it is large and slow.
 
 Re-running is safe and (near-)deterministic: document timestamps are pinned so
 regenerated files do not churn in git. The exact ZIP bytes may still differ
@@ -26,6 +30,7 @@ across openpyxl versions, but the parsed values the tests rely on will not.
 from __future__ import annotations
 
 import datetime as dt
+import sys
 import zipfile
 from pathlib import Path
 
@@ -303,8 +308,49 @@ def gen_sparse_gaps() -> None:
     _save(wb, "sparse-gaps.xlsx")
 
 
+def gen_big_50k() -> None:
+    """A large sheet (~50k rows) for the M2 performance target.
+
+    Producer-agnostic: this is a scale/perf fixture, not a producer-variance one,
+    so openpyxl is fine. Written in write-only mode to stay memory-cheap. Mostly
+    numeric to keep the file size modest; one repeated text column and a boolean
+    exercise the string/bool paths at scale.
+    """
+    from openpyxl import Workbook as WriteOnlyWorkbook
+
+    ROWS = 50_000
+    CATEGORIES = ("alpha", "beta", "gamma", "delta", "epsilon", "zeta")
+
+    wb = WriteOnlyWorkbook(write_only=True)
+    ws = wb.create_sheet("Data")
+    ws.append(["id", "value", "delta", "count", "pct", "category", "flag"])
+    for i in range(1, ROWS + 1):
+        ws.append([
+            i,
+            (i * 7) % 1000,
+            round((i % 97) / 97.0, 4),
+            i * 3,
+            round((i % 100) / 100.0, 2),
+            CATEGORIES[i % len(CATEGORIES)],
+            i % 2 == 0,
+        ])
+    wb.properties.creator = "Darcha fixture generator"
+    wb.properties.created = _PINNED
+    wb.properties.modified = _PINNED
+
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    path = OUT_DIR / "big-50k-rows.xlsx"
+    wb.save(path)
+    print(f"  wrote {path.relative_to(REPO_ROOT)}  ({ROWS} rows, perf fixture)")
+
+
 def main() -> None:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
+    if "big" in sys.argv[1:]:
+        print("Generating the 50k-row performance fixture ...")
+        gen_big_50k()
+        print("Done.")
+        return
     print(f"Generating synthetic fixtures into {OUT_DIR.relative_to(REPO_ROOT)} ...")
     gen_values_basic()
     gen_strings_shared()

@@ -100,11 +100,20 @@ Note: openpyxl also *defines* an unused custom numFmt `165` (`yyyy-mm-dd
 h:mm:ss`) that no cell references — a harmless real-world artifact. Serials use
 the 1900 epoch (`date1904=false`).
 
+## Performance fixture
+
+`big-50k-rows.xlsx` — a producer-agnostic scale fixture for the M2 performance
+target (~50,000 data rows × 7 columns; mostly numeric, with one repeated text
+column and a boolean). It has **no golden values** — it exercises scroll/render
+throughput, not producer variance — so it is generated separately and is not
+part of the default 8-fixture run.
+
 ## Regenerating
 
 ```bash
 pip install openpyxl        # tested with 3.1.5
-python3 tools/gen_fixtures.py
+python3 tools/gen_fixtures.py          # the 8 small golden fixtures
+python3 tools/gen_fixtures.py big       # big-50k-rows.xlsx (large, perf only)
 ```
 
 Output is (near-)deterministic: document timestamps and hand-crafted ZIP entry
