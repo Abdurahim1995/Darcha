@@ -14,15 +14,15 @@ Prerequisites in repo: `CLAUDE.md` (root), `docs/TECH_SPEC.md`, this file.
 
 ## Progress checklist
 
-**M1 — Parser core (no UI)**
-- [x] T0 Skeleton · [x] T1 Fixtures infra · [x] T2 Container+errors · [x] T3 Workbook · [x] T4 SharedStrings · [x] T5 Styles · [x] T6 Sheet data · [x] T7 Layout extras · [x] T8 Facade · 🧑 OWNER: real fixtures · [~] T9 CI (PARTIAL — see below)
+**M1 — Parser core (no UI) — ✅ COMPLETE**
+- [x] T0 Skeleton · [x] T1 Fixtures infra · [x] T2 Container+errors · [x] T3 Workbook · [x] T4 SharedStrings · [x] T5 Styles · [x] T6 Sheet data · [x] T7 Layout extras · [x] T8 Facade · [x] 🧑 OWNER: real fixtures · [x] T9 CI
 
-> **T9 — PARTIAL:**
-> - ✅ **DONE** — CI workflow (`.github/workflows/ci.yml`) + README badge; green on GitHub (`Abdurahim1995/Darcha`).
-> - ⬜ **OPEN** — real-producer fixtures + `FIXTURES.md` golden lock; blocked on owner-provided **Excel / Google Sheets / WPS** files.
-> - Also landed: `big-50k-rows.xlsx` perf fixture (producer-agnostic, for M2).
+> **T9 — DONE:**
+> - ✅ CI workflow (`.github/workflows/ci.yml`) + README badge; green on GitHub (`Abdurahim1995/Darcha`).
+> - ✅ Real-producer corpus: 7 **Microsoft Excel Online** files in `fixtures/excel/`, golden-locked in `ExcelFixturesTest.kt`; `FIXTURES.md` records the values and the producer variance they capture.
+> - ✅ Also landed: `big-50k-rows.xlsx` perf fixture (producer-agnostic, for M2), and `tools/check_fixtures.py` to validate any future real-producer files.
 >
-> **M1 exit criteria:** M1 is fully complete only when the real-producer golden lock lands.
+> **M1 exit criteria — met.** The parser reads real Excel output, not just our own; every assertion was read out of the committed files. `gsheets/`, `libreoffice/` and `wps/` remain optional future additions — recipes are in `docs/FIXTURE_RECIPES.md` and the check script is in place.
 
 **M2 — Raw grid on screen**
 - [ ] T10 MVI foundation · [ ] T11 File loading · [ ] T12 Geometry engine · [ ] T13 Canvas render · [ ] T14 Scroll+fling · [ ] T15 Sheet tabs + perf gate
