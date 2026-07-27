@@ -27,12 +27,19 @@ kotlin {
 }
 
 dependencies {
-    // Establishes the one-way module graph (CLAUDE.md rule 4). The viewer will
-    // consume the parser + model in M2; no viewer code exists yet (T0).
+    // One-way module graph (CLAUDE.md rule 4). :core:model is `api` because
+    // viewer types expose model types (ViewerState.Error carries ErrorKind), so
+    // :app must be able to resolve them.
     implementation(project(":core:parser"))
-    implementation(project(":core:model"))
+    api(project(":core:model"))
+
+    // ViewModel + viewModelScope for the MVI layer (T10). Third-party runtime
+    // deps are barred in :core:* only; the UI layer may use AndroidX.
+    implementation(libs.androidx.lifecycle.viewmodel.ktx)
 
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.ui)
     implementation(libs.androidx.material3)
+
+    testImplementation(libs.junit)
 }
