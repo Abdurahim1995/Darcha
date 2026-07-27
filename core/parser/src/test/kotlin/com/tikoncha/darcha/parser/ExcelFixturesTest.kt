@@ -169,6 +169,31 @@ class ExcelFixturesTest {
         }
     }
 
+    // --- frozen-both.xlsx: Excel froze rows AND columns ---
+
+    @Test
+    fun frozenBoth_rowsAndColumnsFrozen() {
+        open("frozen-both.xlsx").use { wb ->
+            assertEquals(listOf(SHEET_RU), wb.sheets.map { it.name })
+            val sheet = read(wb, 0)
+
+            // Excel emitted <pane xSplit="1" ySplit="2" topLeftCell="B3"
+            // activePane="bottomRight" state="frozen"/> — the companion to
+            // frozen.xlsx, which carries xSplit only. Freezing at B3 means two
+            // rows, not one.
+            assertEquals(FrozenPanes(frozenCols = 1, frozenRows = 2), sheet.layout.frozenPanes)
+            assertTrue(sheet.layout.frozenPanes.isFrozen)
+            assertEquals(emptyList<CellRange>(), sheet.layout.merges)
+
+            assertEquals(12, sheet.data.cellCount)
+            assertEquals("Nomi", text(wb, sheet, 0, 0))
+            assertEquals("Narxi", text(wb, sheet, 0, 2))
+            assertEquals("Olma", text(wb, sheet, 1, 0))
+            assertEquals(CellValue.Number(10.0), sheet.data.cellAt(1, 1))
+            assertEquals(CellValue.Number(3000.0), sheet.data.cellAt(3, 2))
+        }
+    }
+
     // --- dates.xlsx: builtin date formats chosen by Excel ---
 
     @Test
@@ -267,8 +292,8 @@ class ExcelFixturesTest {
     private val SHEET_RU = "Лист1"
 
     private val FIXTURES = listOf(
-        "values-basic.xlsx", "strings.xlsx", "styles-basic.xlsx",
-        "merged.xlsx", "frozen.xlsx", "dates.xlsx", "uzbek-text.xlsx",
+        "values-basic.xlsx", "strings.xlsx", "styles-basic.xlsx", "merged.xlsx",
+        "frozen.xlsx", "frozen-both.xlsx", "dates.xlsx", "uzbek-text.xlsx",
     )
 
     private fun open(name: String): Workbook =

@@ -232,6 +232,26 @@ def check_frozen(s: Sheet) -> list[str]:
     return problems
 
 
+def check_frozen_both(s: Sheet) -> list[str]:
+    """Companion to frozen.xlsx — both axes frozen (freeze at B3)."""
+    problems = []
+    header = [s.cells.get(c, {}).get("value") for c in ("A1", "B1", "C1")]
+    if header != ["Nomi", "Soni", "Narxi"]:
+        problems.append(f"A1:C1 must be Nomi/Soni/Narxi, found {header}")
+    frozen = [p for p in s.panes if p[2] == "frozen"]
+    if not frozen:
+        problems.append("no frozen pane — select B3, then View > Freeze Panes > Freeze Panes")
+    else:
+        xsplit, ysplit, _ = frozen[0]
+        if not xsplit or xsplit == "0":
+            problems.append(f"expected a frozen column (xSplit), found xSplit={xsplit!r}")
+        if not ysplit or ysplit == "0":
+            problems.append(f"expected frozen rows (ySplit), found ySplit={ysplit!r} — freeze at B3, not B1")
+    if s.merges:
+        problems.append(f"this file must NOT contain merges, found {s.merges}")
+    return problems
+
+
 def check_dates(s: Sheet) -> list[str]:
     """A5: date/time values recognized as dates, not text."""
     problems = []
@@ -265,6 +285,7 @@ CHECKS = {
     "styles-basic.xlsx": check_styles_basic,
     "merged.xlsx": check_merged,
     "frozen.xlsx": check_frozen,
+    "frozen-both.xlsx": check_frozen_both,
     "dates.xlsx": check_dates,
     "uzbek-text.xlsx": check_uzbek_text,
 }

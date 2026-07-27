@@ -114,7 +114,7 @@ the 1900 epoch (`date1904=false`).
 
 ## Real-producer corpus — `excel/`
 
-Seven files written by **Microsoft Excel Online**, golden-locked in
+Eight files written by **Microsoft Excel Online**, golden-locked in
 `ExcelFixturesTest.kt`. Every expected value there was read out of the committed
 files, never typed from memory.
 
@@ -124,7 +124,8 @@ files, never typed from memory.
 | `strings.xlsx` | shared string de-duplication | table `[apple, banana, cherry]`; `A1..A6` → indices `0,1,0,2,1,0` |
 | `styles-basic.xlsx` | fonts, fill, alignment | `A1` bold; `A2` italic; `A3` font `FFFB0007`; `A4` fill `FFFFFF0B`; `A5` center/center; `A6` right/center |
 | `merged.xlsx` | merged range | one merge `A1:C1`; anchor `A1`="Hisobot", covered cells empty; 10 cells |
-| `frozen.xlsx` | frozen pane | `xSplit=1`, **no `ySplit`** → `FrozenPanes(1, 0)`; 12 cells |
+| `frozen.xlsx` | frozen pane, column only | `xSplit=1`, **no `ySplit`** → `FrozenPanes(1, 0)`; 12 cells |
+| `frozen-both.xlsx` | frozen pane, both axes | `xSplit=1`, `ySplit=2`, `topLeftCell=B3` → `FrozenPanes(1, 2)`; 12 cells |
 | `dates.xlsx` | builtin date formats | serials `45306`, `0.5625`, `45306.5625`, `45657`; numFmt `14 / 20 / 22 / 14`; no shared strings |
 | `uzbek-text.xlsx` | UTF-8 + non-ASCII sheet name | sheet `Jadval 1`; `A1..A5` = O'zbekiston / Toshkent / Farg'ona / Namangan / Andijon |
 
@@ -147,7 +148,9 @@ own tooling wrote:
 - **`frozen.xlsx` has no `ySplit`.** Excel emitted `<pane xSplit="1" state="frozen"
   topLeftCell="B1"/>`, freezing only the first column even though the recipe aimed
   at row + column. The test asserts `FrozenPanes(1, 0)`: a missing `ySplit` must
-  parse as zero rather than crash.
+  parse as zero rather than crash. `frozen-both.xlsx` is its companion, with both
+  attributes present (`xSplit=1 ySplit=2`), so the two together cover the
+  attribute-present and attribute-absent paths from the same producer.
 - **`uzbek-text.xlsx` carries junk cells.** A paste left `A1:E10` populated, most
   cells holding a lone newline string (shared index 1), for 50 cells total. Real
   files contain exactly this kind of debris, so it is asserted rather than tidied
