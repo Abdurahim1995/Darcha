@@ -43,10 +43,12 @@ public data class CellRef(
  *
  * @property displayName the file name shown in the UI.
  * @property sheetNames worksheet names, in document order.
+ * @property rowCount populated rows in the sheet that was read.
  */
 public data class DocumentMeta(
     public val displayName: String,
     public val sheetNames: List<String>,
+    public val rowCount: Int,
 )
 
 /**

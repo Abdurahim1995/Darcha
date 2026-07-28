@@ -22,10 +22,12 @@ import org.junit.Test
  */
 class ViewerViewModelTest {
 
-    private val meta = DocumentMeta("book.xlsx", listOf("Sheet1", "Sheet2"))
+    private val meta = DocumentMeta("book.xlsx", listOf("Sheet1", "Sheet2"), rowCount = 7)
 
     private val source = object : WorkbookSource {
         override val displayName: String = "book.xlsx"
+        override val declaredSizeBytes: Long? = null
+        override fun openStream(): java.io.InputStream = java.io.ByteArrayInputStream(ByteArray(0))
     }
 
     /** Emits [progress] steps, then returns [result]. */

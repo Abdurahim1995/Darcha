@@ -2,18 +2,33 @@ package com.tikoncha.darcha.feature.viewer.data
 
 import com.tikoncha.darcha.feature.viewer.mvi.DocumentMeta
 import com.tikoncha.darcha.model.ErrorKind
+import java.io.InputStream
 
 /**
- * An opaque handle to a document the viewer can open.
+ * A document the viewer can open, as a stream of bytes plus a name.
  *
  * The MVI layer never sees an `android.net.Uri`: `:app` implements this over
  * whatever the platform hands it (a SAF `content://` URI in T11), which keeps
- * the ViewModel unit-testable on a plain JVM.
- *
- * @property displayName file name to show in the UI.
+ * the ViewModel and the repository unit-testable on a plain JVM.
  */
 public interface WorkbookSource {
+
+    /** File name to show in the UI. */
     public val displayName: String
+
+    /**
+     * Size in bytes as reported by the provider, or `null` when unknown.
+     *
+     * Treated only as a cheap early hint — providers may omit it or report it
+     * wrongly, so the repository counts bytes while copying regardless.
+     */
+    public val declaredSizeBytes: Long?
+
+    /**
+     * Open the document's bytes. Called on an I/O dispatcher; the caller closes
+     * the stream.
+     */
+    public fun openStream(): InputStream
 }
 
 /** The outcome of loading a document. */

@@ -14,10 +14,13 @@ class ViewerReducerTest {
     private val meta = DocumentMeta(
         displayName = "report.xlsx",
         sheetNames = listOf("Jadval 1", "Narxlar", "Ҳисобот"),
+        rowCount = 42,
     )
 
     private val source = object : WorkbookSource {
         override val displayName: String = "report.xlsx"
+        override val declaredSizeBytes: Long? = null
+        override fun openStream(): java.io.InputStream = java.io.ByteArrayInputStream(ByteArray(0))
     }
 
     private fun reduce(state: ViewerState, event: ViewerEvent) = ViewerReducer.reduce(state, event)
