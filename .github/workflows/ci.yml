@@ -13,8 +13,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  core-tests:
-    name: Core parser tests (pure JVM)
+  unit-tests:
+    name: Unit tests (all modules)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -29,8 +29,10 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      # Pure-JVM parser tests — no emulator, no Android SDK needed to execute
-      # (the :app / :feature:viewer modules configure via the runner's
-      # preinstalled Android SDK, but their tasks are not run here).
-      - name: Run :core:model and :core:parser tests
-        run: ./gradlew :core:model:test :core:parser:test --no-daemon
+      # Module-agnostic on purpose: `test` resolves in every subproject that
+      # defines it, so modules added later are covered without editing this file.
+      # (Listing modules by hand is how :feature:viewer's tests went unrun after
+      # T10.) These are all local JVM unit tests — no emulator required; the
+      # Android modules build against the runner's preinstalled SDK.
+      - name: Run unit tests for all modules
+        run: ./gradlew test --no-daemon
