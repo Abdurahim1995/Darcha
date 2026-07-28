@@ -148,15 +148,22 @@ public class XlsxWorkbookRepository(
      * skips [close], so orphans accumulate in the cache until something sweeps
      * them; the app does this at startup.
      *
+     * Safe to call at any time. It takes the same lock as [load], so it can
+     * never run alongside a load in flight — that copy exists on disk but is not
+     * yet the session's, and sweeping it mid-parse would pull the file out from
+     * under the parser. Waiting costs nothing: this is housekeeping.
+     *
      * @return how many files were removed.
      */
     public suspend fun sweepStaleTempFiles(): Int = withContext(io) {
-        val live = session?.file
-        cacheDir.listFiles()
-            .orEmpty()
-            .filter { it.isFile && it.name.startsWith(TEMP_PREFIX) && it.name.endsWith(TEMP_SUFFIX) }
-            .filter { it != live }
-            .count { it.delete() }
+        mutex.withLock {
+            val live = session?.file
+            cacheDir.listFiles()
+                .orEmpty()
+                .filter { it.isFile && it.name.startsWith(TEMP_PREFIX) && it.name.endsWith(TEMP_SUFFIX) }
+                .filter { it != live }
+                .count { it.delete() }
+        }
     }
 
     // --- copy ---

@@ -1,8 +1,11 @@
 package com.tikoncha.darcha.feature.viewer.data
 
 import com.tikoncha.darcha.model.ErrorKind
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -277,6 +280,43 @@ class XlsxWorkbookRepositoryTest {
         assertEquals("both orphans should go", 2, swept)
         assertTrue("the open document's copy must survive", repository.readSheet(0) is WorkbookLoad.Success)
         assertTrue("unrelated files are left alone", foreign.exists())
+        repository.close()
+    }
+
+    @Test
+    fun sweep_duringAnInFlightLoad_doesNotStealItsCopy() = runBlocking {
+        // The copy exists on disk before it becomes the session's, so a sweep
+        // racing a load could delete the very file being parsed. The shared lock
+        // is what prevents it; without it this test deletes the file mid-parse.
+        val cacheDir = temp.newFolder()
+        val repository = XlsxWorkbookRepository(cacheDir = cacheDir, io = Dispatchers.IO)
+        val streamOpened = CompletableDeferred<Unit>()
+        val letLoadFinish = CompletableDeferred<Unit>()
+
+        val slowSource = object : WorkbookSource {
+            override val displayName = "slow.xlsx"
+            override val declaredSizeBytes: Long? = null
+            override fun openStream(): InputStream {
+                // By now load() has created its temp file and holds the lock.
+                streamOpened.complete(Unit)
+                runBlocking { letLoadFinish.await() }
+                return ByteArrayInputStream(workbookBytes(rows = 3))
+            }
+        }
+
+        withTimeout(20_000) {
+            val load = async { repository.load(slowSource) {} }
+            streamOpened.await()
+
+            val sweep = async { repository.sweepStaleTempFiles() }
+            letLoadFinish.complete(Unit)
+
+            assertTrue("the load must survive a concurrent sweep", load.await() is WorkbookLoad.Success)
+            assertEquals("nothing to sweep — the only copy is the live one", 0, sweep.await())
+        }
+
+        // And the document is still readable afterwards.
+        assertTrue(repository.readSheet(0) is WorkbookLoad.Success)
         repository.close()
     }
 
