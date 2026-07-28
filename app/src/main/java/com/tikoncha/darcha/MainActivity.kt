@@ -14,11 +14,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.lifecycleScope
 import com.tikoncha.darcha.feature.viewer.ViewerViewModel
 import com.tikoncha.darcha.feature.viewer.data.WorkbookRepository
 import com.tikoncha.darcha.feature.viewer.data.XlsxWorkbookRepository
 import com.tikoncha.darcha.feature.viewer.mvi.ViewerIntent
 import com.tikoncha.darcha.feature.viewer.ui.ViewerScreen
+import kotlinx.coroutines.launch
 
 /**
  * The app's single entry point: wires the parser-backed repository into
@@ -29,13 +31,21 @@ import com.tikoncha.darcha.feature.viewer.ui.ViewerScreen
  */
 class MainActivity : ComponentActivity() {
 
+    private val repository: XlsxWorkbookRepository by lazy {
+        XlsxWorkbookRepository(cacheDir = cacheDir)
+    }
+
     private val viewModel: ViewerViewModel by lazy {
-        val repository = XlsxWorkbookRepository(cacheDir = cacheDir)
         ViewModelProvider(this, ViewerViewModelFactory(repository))[ViewerViewModel::class.java]
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Process death skips the ViewModel's cleanup, so a previous run can leave
+        // temp copies behind. Sweep them once at startup, off the main thread.
+        lifecycleScope.launch { repository.sweepStaleTempFiles() }
+
         setContent {
             MaterialTheme {
                 val state by viewModel.state.collectAsState()

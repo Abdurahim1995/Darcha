@@ -52,8 +52,11 @@ public sealed interface WorkbookLoad {
 public interface WorkbookRepository {
 
     /**
-     * Load the document behind [source], reporting progress in `0f..1f` through
-     * [onProgress] as rows stream in.
+     * Load the document behind [source] and read its first sheet, reporting
+     * progress in `0f..1f` through [onProgress] as rows stream in.
+     *
+     * Opening a document starts a **session** that stays open until the next
+     * [load] or a [close] — later sheets are read from it with [readSheet].
      *
      * Never throws for a bad document: failures come back as
      * [WorkbookLoad.Failure].
@@ -62,4 +65,19 @@ public interface WorkbookRepository {
         source: WorkbookSource,
         onProgress: (Float) -> Unit,
     ): WorkbookLoad
+
+    /**
+     * Read another sheet of the currently open document (T15 switches sheets
+     * through this). Fails if no document is open.
+     */
+    public suspend fun readSheet(
+        index: Int,
+        onProgress: (Float) -> Unit = {},
+    ): WorkbookLoad
+
+    /**
+     * End the current session: close the workbook and drop any resources it
+     * holds. Safe to call when nothing is open.
+     */
+    public fun close()
 }

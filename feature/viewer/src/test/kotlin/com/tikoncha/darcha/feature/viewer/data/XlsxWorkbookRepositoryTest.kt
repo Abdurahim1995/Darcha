@@ -181,43 +181,170 @@ class XlsxWorkbookRepositoryTest {
         assertTrue(result is WorkbookLoad.Success)
     }
 
+    // --- session lifetime: the temp copy must outlive the first parse ---
+
+    @Test
+    fun secondSheet_isReadableAfterTheInitialParse() = runBlocking {
+        // The whole point of the session: sheet 0 is parsed up front, and the
+        // rest are read later from the same temp copy (T15 switches sheets).
+        val source = BytesSource(workbookBytes(rows = 3, sheetRowCounts = listOf(3, 5, 2)))
+        val repository = repository()
+
+        val first = repository.load(source) {}
+        assertEquals(3, (first as WorkbookLoad.Success).meta.rowCount)
+        assertEquals(listOf("Sheet1", "Sheet2", "Sheet3"), first.meta.sheetNames)
+
+        val second = repository.readSheet(1)
+        assertEquals(5, (second as WorkbookLoad.Success).meta.rowCount)
+
+        val third = repository.readSheet(2)
+        assertEquals(2, (third as WorkbookLoad.Success).meta.rowCount)
+
+        repository.close()
+    }
+
+    @Test
+    fun tempCopySurvivesTheParse_andIsRemovedOnClose() = runBlocking {
+        val cacheDir = temp.newFolder()
+        val repository = XlsxWorkbookRepository(cacheDir = cacheDir, io = Dispatchers.Unconfined)
+
+        repository.load(BytesSource(workbookBytes(rows = 2))) {}
+        assertEquals(
+            "the document's copy must stay while it is open",
+            1,
+            cacheDir.listFiles().orEmpty().size,
+        )
+
+        repository.close()
+        assertTrue("closing must delete it", cacheDir.listFiles().orEmpty().isEmpty())
+    }
+
+    @Test
+    fun openingAnotherDocument_releasesThePreviousCopy() = runBlocking {
+        val cacheDir = temp.newFolder()
+        val repository = XlsxWorkbookRepository(cacheDir = cacheDir, io = Dispatchers.Unconfined)
+
+        repository.load(BytesSource(workbookBytes(rows = 2))) {}
+        repository.load(BytesSource(workbookBytes(rows = 4))) {}
+
+        assertEquals(
+            "only the current document keeps a copy",
+            1,
+            cacheDir.listFiles().orEmpty().size,
+        )
+        repository.close()
+    }
+
+    @Test
+    fun readSheet_withoutAnOpenDocument_fails() = runBlocking {
+        assertTrue(repository().readSheet(0) is WorkbookLoad.Failure)
+    }
+
+    @Test
+    fun readSheet_outOfRange_fails() = runBlocking {
+        val repository = repository()
+        repository.load(BytesSource(workbookBytes(rows = 1))) {}
+        assertTrue(repository.readSheet(9) is WorkbookLoad.Failure)
+        repository.close()
+    }
+
+    @Test
+    fun failedLoad_leavesNoCopyBehind() = runBlocking {
+        val cacheDir = temp.newFolder()
+        val repository = XlsxWorkbookRepository(cacheDir = cacheDir, io = Dispatchers.Unconfined)
+
+        repository.load(BytesSource(byteArrayOf(1, 2, 3, 4, 5, 6, 7, 8))) {}
+
+        assertTrue(cacheDir.listFiles().orEmpty().isEmpty())
+    }
+
+    // --- startup sweep ---
+
+    @Test
+    fun sweep_removesOrphansButKeepsTheOpenDocumentAndForeignFiles() = runBlocking {
+        val cacheDir = temp.newFolder()
+        // Orphans a killed process would leave behind.
+        File(cacheDir, "darcha-111.xlsx").writeText("stale")
+        File(cacheDir, "darcha-222.xlsx").writeText("stale")
+        // Something else's cache file must not be touched.
+        val foreign = File(cacheDir, "glide-cache.bin").apply { writeText("keep me") }
+
+        val repository = XlsxWorkbookRepository(cacheDir = cacheDir, io = Dispatchers.Unconfined)
+        repository.load(BytesSource(workbookBytes(rows = 2))) {}
+
+        val swept = repository.sweepStaleTempFiles()
+
+        assertEquals("both orphans should go", 2, swept)
+        assertTrue("the open document's copy must survive", repository.readSheet(0) is WorkbookLoad.Success)
+        assertTrue("unrelated files are left alone", foreign.exists())
+        repository.close()
+    }
+
     // --- helpers ---
 
     /**
-     * Build a minimal valid .xlsx in memory with [rows] rows of three cells.
+     * Build a minimal valid .xlsx in memory.
+     *
+     * @param rows rows in the first sheet, when [sheetRowCounts] is not given.
+     * @param sheetRowCounts row count per sheet, one entry per sheet.
      *
      * Written by hand rather than reusing a fixture: the golden corpus lives in
      * `:core:parser` and exists to pin parser behaviour, whereas this only needs
      * *some* readable workbook to exercise repository wiring.
      */
-    private fun workbookBytes(rows: Int): ByteArray {
-        val sheetRows = (1..rows).joinToString("") { r ->
-            """<row r="$r"><c r="A$r"><v>$r</v></c><c r="B$r"><v>${r * 2}</v></c>""" +
-                """<c r="C$r"><v>${r * 3}</v></c></row>"""
-        }
-        val parts = listOf(
-            "[Content_Types].xml" to """<?xml version="1.0" encoding="UTF-8"?>
-                |<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
-                |<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
-                |<Default Extension="xml" ContentType="application/xml"/>
-                |<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
-                |<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
-                |</Types>""".trimMargin(),
-            "_rels/.rels" to """<?xml version="1.0" encoding="UTF-8"?>
-                |<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-                |<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
-                |</Relationships>""".trimMargin(),
-            "xl/workbook.xml" to """<?xml version="1.0" encoding="UTF-8"?>
-                |<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
-                |<sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets></workbook>""".trimMargin(),
-            "xl/_rels/workbook.xml.rels" to """<?xml version="1.0" encoding="UTF-8"?>
-                |<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-                |<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
-                |</Relationships>""".trimMargin(),
-            "xl/worksheets/sheet1.xml" to """<?xml version="1.0" encoding="UTF-8"?>
+    private fun workbookBytes(rows: Int, sheetRowCounts: List<Int> = listOf(rows)): ByteArray {
+        fun sheetXml(rowCount: Int): String {
+            val sheetRows = (1..rowCount).joinToString("") { r ->
+                """<row r="$r"><c r="A$r"><v>$r</v></c><c r="B$r"><v>${r * 2}</v></c>""" +
+                    """<c r="C$r"><v>${r * 3}</v></c></row>"""
+            }
+            return """<?xml version="1.0" encoding="UTF-8"?>
                 |<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-                |<sheetData>$sheetRows</sheetData></worksheet>""".trimMargin(),
-        )
+                |<sheetData>$sheetRows</sheetData></worksheet>""".trimMargin()
+        }
+
+        val sheetOverrides = sheetRowCounts.indices.joinToString("") { i ->
+            """<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>"""
+        }
+        val sheetEntries = sheetRowCounts.indices.joinToString("") { i ->
+            """<sheet name="Sheet${i + 1}" sheetId="${i + 1}" r:id="rId${i + 1}"/>"""
+        }
+        val sheetRels = sheetRowCounts.indices.joinToString("") { i ->
+            """<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>"""
+        }
+
+        val parts = buildList {
+            add(
+                "[Content_Types].xml" to """<?xml version="1.0" encoding="UTF-8"?>
+                    |<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+                    |<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+                    |<Default Extension="xml" ContentType="application/xml"/>
+                    |<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+                    |$sheetOverrides
+                    |</Types>""".trimMargin(),
+            )
+            add(
+                "_rels/.rels" to """<?xml version="1.0" encoding="UTF-8"?>
+                    |<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+                    |<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+                    |</Relationships>""".trimMargin(),
+            )
+            add(
+                "xl/workbook.xml" to """<?xml version="1.0" encoding="UTF-8"?>
+                    |<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+                    |<sheets>$sheetEntries</sheets></workbook>""".trimMargin(),
+            )
+            add(
+                "xl/_rels/workbook.xml.rels" to """<?xml version="1.0" encoding="UTF-8"?>
+                    |<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+                    |$sheetRels
+                    |</Relationships>""".trimMargin(),
+            )
+            sheetRowCounts.forEachIndexed { i, count ->
+                add("xl/worksheets/sheet${i + 1}.xml" to sheetXml(count))
+            }
+        }
+
         val out = java.io.ByteArrayOutputStream()
         ZipOutputStream(out).use { zip ->
             parts.forEach { (name, content) ->

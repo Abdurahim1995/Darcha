@@ -37,6 +37,8 @@ class ViewerViewModelTest {
     ) : WorkbookRepository {
         var loadCount: Int = 0
             private set
+        var closeCount: Int = 0
+            private set
 
         override suspend fun load(
             source: WorkbookSource,
@@ -46,10 +48,28 @@ class ViewerViewModelTest {
             progress.forEach(onProgress)
             return result
         }
+
+        override suspend fun readSheet(index: Int, onProgress: (Float) -> Unit): WorkbookLoad = result
+
+        override fun close() {
+            closeCount++
+        }
     }
 
     private fun viewModel(repository: WorkbookRepository) =
         ViewerViewModel(repository, CoroutineScope(Dispatchers.Unconfined))
+
+    /**
+     * Invoke the protected `onCleared` hook. `ViewModel.clear()` is internal to
+     * the lifecycle library, so reflection is the only way to simulate the
+     * screen going away from a plain JVM test.
+     */
+    private fun ViewerViewModel.callOnCleared() {
+        ViewerViewModel::class.java.getDeclaredMethod("onCleared").apply {
+            isAccessible = true
+            invoke(this@callOnCleared)
+        }
+    }
 
     @Test
     fun initialState_isIdle() {
@@ -125,6 +145,18 @@ class ViewerViewModelTest {
         val state = vm.state.value as ViewerState.Ready
         assertEquals(1, state.activeSheetId)
         assertEquals(Viewport.INITIAL, state.viewport)
+    }
+
+    @Test
+    fun clearing_closesTheOpenDocument() {
+        // The temp copy behind the document must not outlive the screen.
+        val repository = FakeRepository(WorkbookLoad.Success(meta))
+        val vm = viewModel(repository)
+        vm.dispatch(ViewerIntent.OpenFile(source))
+
+        vm.callOnCleared()
+
+        assertEquals(1, repository.closeCount)
     }
 
     @Test
