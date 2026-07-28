@@ -21,6 +21,7 @@ import com.tikoncha.darcha.feature.viewer.data.XlsxWorkbookRepository
 import com.tikoncha.darcha.feature.viewer.mvi.ViewerIntent
 import com.tikoncha.darcha.feature.viewer.ui.ViewerScreen
 import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * The app's single entry point: wires the parser-backed repository into
@@ -43,8 +44,13 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         // Process death skips the ViewModel's cleanup, so a previous run can leave
-        // temp copies behind. Sweep them once at startup, off the main thread.
-        lifecycleScope.launch { repository.sweepStaleTempFiles() }
+        // temp copies behind. This is process-level housekeeping and must happen
+        // exactly once: a rotation builds a fresh Activity (and with it a fresh,
+        // session-less repository), and sweeping from that one would delete the
+        // copy still in use by the retained ViewModel's open document.
+        if (sweepDone.compareAndSet(false, true)) {
+            lifecycleScope.launch { repository.sweepStaleTempFiles() }
+        }
 
         setContent {
             MaterialTheme {
@@ -79,6 +85,16 @@ class MainActivity : ComponentActivity() {
     }
 
     private companion object {
+
+        /**
+         * Whether the stale-copy sweep has already run in this process.
+         *
+         * If the launching Activity goes away before the sweep finishes it is
+         * simply skipped for this run — the orphans are already stale, and the
+         * next launch picks them up.
+         */
+        val sweepDone = AtomicBoolean(false)
+
         /**
          * MIME filter for the picker. The official spreadsheet type comes first;
          * `application/octet-stream` is included because many providers report

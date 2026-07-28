@@ -7,6 +7,9 @@ import com.tikoncha.darcha.feature.viewer.mvi.DocumentMeta
 import com.tikoncha.darcha.feature.viewer.mvi.ViewerIntent
 import com.tikoncha.darcha.feature.viewer.mvi.ViewerState
 import com.tikoncha.darcha.feature.viewer.mvi.Viewport
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.ViewModelStore
 import com.tikoncha.darcha.model.ErrorKind
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -56,19 +59,20 @@ class ViewerViewModelTest {
         }
     }
 
-    private fun viewModel(repository: WorkbookRepository) =
-        ViewerViewModel(repository, CoroutineScope(Dispatchers.Unconfined))
-
     /**
-     * Invoke the protected `onCleared` hook. `ViewModel.clear()` is internal to
-     * the lifecycle library, so reflection is the only way to simulate the
-     * screen going away from a plain JVM test.
+     * The store the ViewModel lives in, so tests can end its lifecycle the way
+     * the framework does — [ViewModelStore.clear] runs `onCleared`. Each JUnit
+     * test gets a fresh instance of this class, so the store starts empty.
      */
-    private fun ViewerViewModel.callOnCleared() {
-        ViewerViewModel::class.java.getDeclaredMethod("onCleared").apply {
-            isAccessible = true
-            invoke(this@callOnCleared)
+    private val viewModelStore = ViewModelStore()
+
+    private fun viewModel(repository: WorkbookRepository): ViewerViewModel {
+        val factory = object : ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>): T =
+                ViewerViewModel(repository, CoroutineScope(Dispatchers.Unconfined)) as T
         }
+        return ViewModelProvider(viewModelStore, factory)[ViewerViewModel::class.java]
     }
 
     @Test
@@ -154,7 +158,8 @@ class ViewerViewModelTest {
         val vm = viewModel(repository)
         vm.dispatch(ViewerIntent.OpenFile(source))
 
-        vm.callOnCleared()
+        // The supported way to end a ViewModel's life: clearing its store.
+        viewModelStore.clear()
 
         assertEquals(1, repository.closeCount)
     }
