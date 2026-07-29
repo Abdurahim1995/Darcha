@@ -134,7 +134,11 @@ public class XlsxWorkbookRepository(
         }
     }
 
-    override fun close() {
+    /**
+     * Release the open document. The repository itself is not shut down — it is
+     * process-scoped and a later [load] reuses it (see [WorkbookRepository]).
+     */
+    override fun closeDocument() {
         releaseSession()
     }
 

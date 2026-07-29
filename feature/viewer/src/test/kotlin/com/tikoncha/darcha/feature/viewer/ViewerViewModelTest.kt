@@ -54,7 +54,7 @@ class ViewerViewModelTest {
 
         override suspend fun readSheet(index: Int, onProgress: (Float) -> Unit): WorkbookLoad = result
 
-        override fun close() {
+        override fun closeDocument() {
             closeCount++
         }
     }

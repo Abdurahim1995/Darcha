@@ -76,8 +76,14 @@ public interface WorkbookRepository {
     ): WorkbookLoad
 
     /**
-     * End the current session: close the workbook and drop any resources it
-     * holds. Safe to call when nothing is open.
+     * End the current session: close the workbook and delete its temp copy.
+     *
+     * This releases the **document**, not the repository. Implementations stay
+     * usable afterwards, and a later [load] starts a fresh session on the same
+     * instance — which is what happens when the user backs out of the viewer
+     * (clearing the ViewModel) and reopens the app while the process lives on.
+     *
+     * Safe to call repeatedly, and when nothing is open.
      */
-    public fun close()
+    public fun closeDocument()
 }

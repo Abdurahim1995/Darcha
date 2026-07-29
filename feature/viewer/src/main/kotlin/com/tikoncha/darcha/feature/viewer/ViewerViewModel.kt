@@ -90,8 +90,9 @@ public class ViewerViewModel(
     override fun onCleared() {
         loadJob?.cancel()
         // The open document dies with the ViewModel: its temp copy is only useful
-        // while this screen can still ask for another sheet.
-        repository.close()
+        // while this screen can still ask for another sheet. The repository is
+        // process-scoped and stays usable — a later screen loads into it again.
+        repository.closeDocument()
         super.onCleared()
     }
 }

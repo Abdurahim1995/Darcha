@@ -203,7 +203,7 @@ class XlsxWorkbookRepositoryTest {
         val third = repository.readSheet(2)
         assertEquals(2, (third as WorkbookLoad.Success).meta.rowCount)
 
-        repository.close()
+        repository.closeDocument()
     }
 
     @Test
@@ -218,7 +218,7 @@ class XlsxWorkbookRepositoryTest {
             cacheDir.listFiles().orEmpty().size,
         )
 
-        repository.close()
+        repository.closeDocument()
         assertTrue("closing must delete it", cacheDir.listFiles().orEmpty().isEmpty())
     }
 
@@ -235,7 +235,7 @@ class XlsxWorkbookRepositoryTest {
             1,
             cacheDir.listFiles().orEmpty().size,
         )
-        repository.close()
+        repository.closeDocument()
     }
 
     @Test
@@ -248,7 +248,7 @@ class XlsxWorkbookRepositoryTest {
         val repository = repository()
         repository.load(BytesSource(workbookBytes(rows = 1))) {}
         assertTrue(repository.readSheet(9) is WorkbookLoad.Failure)
-        repository.close()
+        repository.closeDocument()
     }
 
     @Test
@@ -280,7 +280,42 @@ class XlsxWorkbookRepositoryTest {
         assertEquals("both orphans should go", 2, swept)
         assertTrue("the open document's copy must survive", repository.readSheet(0) is WorkbookLoad.Success)
         assertTrue("unrelated files are left alone", foreign.exists())
-        repository.close()
+        repository.closeDocument()
+    }
+
+    @Test
+    fun closingADocument_leavesTheRepositoryReusable() = runBlocking {
+        // The repository outlives the ViewModel: pressing Back clears the
+        // ViewModel (which closes the document) while the process stays alive,
+        // and reopening the app must be able to load again on the same instance.
+        val cacheDir = temp.newFolder()
+        val repository = XlsxWorkbookRepository(cacheDir = cacheDir, io = Dispatchers.Unconfined)
+
+        val first = repository.load(BytesSource(workbookBytes(rows = 2))) {}
+        assertEquals(2, (first as WorkbookLoad.Success).meta.rowCount)
+
+        repository.closeDocument()
+        assertTrue("the copy is gone with the document", cacheDir.listFiles().orEmpty().isEmpty())
+        assertTrue("and nothing is open", repository.readSheet(0) is WorkbookLoad.Failure)
+
+        // Same instance, brand new document.
+        val second = repository.load(BytesSource(workbookBytes(rows = 5))) {}
+        assertEquals(5, (second as WorkbookLoad.Success).meta.rowCount)
+        assertTrue("its sheets are readable", repository.readSheet(0) is WorkbookLoad.Success)
+        assertEquals(1, cacheDir.listFiles().orEmpty().size)
+
+        repository.closeDocument()
+    }
+
+    @Test
+    fun closingTwice_isHarmless() = runBlocking {
+        val repository = repository()
+        repository.load(BytesSource(workbookBytes(rows = 1))) {}
+        repository.closeDocument()
+        repository.closeDocument()
+        // Still usable afterwards.
+        assertTrue(repository.load(BytesSource(workbookBytes(rows = 3))) {} is WorkbookLoad.Success)
+        repository.closeDocument()
     }
 
     @Test
@@ -317,7 +352,7 @@ class XlsxWorkbookRepositoryTest {
 
         // And the document is still readable afterwards.
         assertTrue(repository.readSheet(0) is WorkbookLoad.Success)
-        repository.close()
+        repository.closeDocument()
     }
 
     // --- helpers ---
