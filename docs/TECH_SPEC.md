@@ -114,6 +114,39 @@ Gesture / UI event → Intent → ViewModel (reduce) → State → Canvas render
 - **Frozen panes:** four clipped regions with translated origins.
 - **Merged cells:** drawn once at the anchor cell spanning the merged bounds; covered cells are skipped.
 
+## 9.1 Document session lifecycle
+
+Opening a document is not a single parse — it starts a **session** that later reads
+depend on. `ZipFile` needs a real file, so the picked `content://` stream is copied
+into `cacheDir` first; sheets beyond the first are parsed on demand from that copy
+(sheet switching, §11 M2). The copy therefore lives as long as the document is
+open, not just until the first parse returns.
+
+| Concern | Rule |
+|---|---|
+| **Temp copy lifetime** | Belongs to the open document. Released when another document is opened, or on `closeDocument()`. |
+| **`closeDocument()`** | Ends the *session* — closes the workbook, deletes the copy. The repository is **not** shut down: a later `load()` reuses the same instance. |
+| **Ownership** | The repository is **process-scoped** (`DarchaApplication`), never per-Activity. |
+| **Startup sweep** | Orphaned `darcha-*.xlsx` copies from a killed process are deleted at startup. It takes the same lock as `load()`, so it can never delete a copy being written or one in use. |
+
+**Why process scope.** Session state outlives the Activity: a rotation destroys the
+Activity while the retained ViewModel keeps reading the same document. An
+Activity-scoped repository produced a *second*, session-less instance on rotation
+whose sweep saw no live file and deleted the one still in use. Process scope removes
+the whole class of bug; per-Activity guards only patch its symptoms.
+
+### Safety caps (§13)
+
+Both are enforced **while data flows**, never after — a cap checked after a full
+parse has already cost the memory it was meant to save.
+
+| Cap | Limit | Enforcement |
+|---|---|---|
+| File size | **50 MB** | The provider's reported size is a cheap first check, but it may be absent or wrong, so bytes are counted during the copy and it aborts mid-stream. |
+| Cell count | **1,000,000** | Counted per streamed chunk; the parse aborts mid-sheet. At ~32–40 bytes per sparse cell this is ≈35–40 MB. |
+
+Both surface as `ErrorKind.TooLarge`.
+
 ## 10. MVI contract (sketch)
 
 ```kotlin
@@ -161,7 +194,7 @@ sealed interface ViewerIntent {
 |---|---|
 | OOXML edge cases are endless | Strict scope + fixture-driven development: we only support what a fixture proves |
 | Canvas gesture/coordinate math complexity | Isolated early in M2, before any formatting work |
-| Huge files → OOM | Streaming parse, sparse model, explicit cell-count cap with a friendly `TooLarge` error |
+| Huge files → OOM | Streaming parse, sparse model, explicit size and cell-count caps with a friendly `TooLarge` error — limits and enforcement in §9.1 |
 | Motivation drift (portfolio project) | Milestone acceptance criteria; a runnable build ships at M2, not at the end |
 
 ## 14. Future (post-v1 candidates)
