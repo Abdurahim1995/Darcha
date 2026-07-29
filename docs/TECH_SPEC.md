@@ -147,15 +147,43 @@ parse has already cost the memory it was meant to save.
 
 Both surface as `ErrorKind.TooLarge`.
 
-## 10. MVI contract (sketch)
+## 9.2 Coordinate system and units
+
+The geometry engine works in **content pixels** — the grid at zoom 1 — and zoom
+is applied once, at the edge:
+
+```
+screen = (content − scroll) × zoom
+```
+
+| Quantity | Space | Rule |
+|---|---|---|
+| `Viewport.scrollX/scrollY` | content px, **unzoomed** | Stored this way so geometry is zoom-independent. |
+| Canvas coordinates | screen px | Produced by `screenXOf` / `screenYOf`, which apply the formula above. |
+| Gesture deltas | screen px | **Must be divided by zoom before being applied to scroll** — a 100 px drag at zoom 2 moves 50 content px. This is the rule T14 follows. |
+| Column widths | char units → px | Via the central `columnWidthToPixels`, on the 96 DPI `maxDigitWidth` base (§7 traps). |
+| Row heights | points → px | `× 96/72` (4/3), the same 96 DPI base, parameterized as `pointToPixel`. |
+
+**Density.** The renderer folds the display density into the two unit converters
+when it builds the geometry (`maxDigitWidth × density`, `pointToPixel × density`),
+so geometry output is directly usable as Canvas coordinates and the engine itself
+stays device-independent and testable.
+
+> **Open question for T20.** Density and zoom are both plain multipliers today and
+> compose as `density × zoom`. Once pinch zoom is focal-point anchored, that may
+> need separating — for example keeping text at a legible size independent of
+> zoom. Revisit before implementing T20.
+
+## 10. MVI contract
 
 ```kotlin
 sealed interface ViewerState {
     data class Parsing(val progress: Float) : ViewerState
     data class Ready(
         val docMeta: DocumentMeta,
+        val sheet: SheetSnapshot,  // cells + layout + shared strings, what the Canvas draws
         val activeSheetId: Int,
-        val viewport: Viewport,   // scrollX, scrollY, zoom
+        val viewport: Viewport,    // scrollX, scrollY (content px, §9.2), zoom
         val selection: CellRef?,
     ) : ViewerState
     data class Error(val kind: ErrorKind) : ViewerState  // Corrupted, Encrypted, Unsupported, TooLarge
@@ -171,6 +199,14 @@ sealed interface ViewerIntent {
     data object Retry : ViewerIntent
 }
 ```
+
+`SheetSnapshot` is the immutable bundle the renderer draws from — the sparse
+`SheetData`, the `SheetLayout`, and the workbook's `StringTable`. Cells stay raw
+(§8): a shared-string cell holds an index, and its text is resolved and cached
+while drawing rather than materialized for a sheet that may be a million rows long.
+
+Parser results reach the reducer as a second event family alongside the intents,
+so there is one `reduce(state, event)` entry point and one place state changes.
 
 ## 11. Milestones
 
