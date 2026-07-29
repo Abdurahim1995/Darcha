@@ -34,8 +34,11 @@ public interface WorkbookSource {
 /** The outcome of loading a document. */
 public sealed interface WorkbookLoad {
 
-    /** Loading succeeded, yielding [meta]. */
-    public data class Success(public val meta: DocumentMeta) : WorkbookLoad
+    /** Loading succeeded, yielding [meta] and the sheet that was read. */
+    public data class Success(
+        public val meta: DocumentMeta,
+        public val sheet: SheetSnapshot,
+    ) : WorkbookLoad
 
     /** Loading failed with [kind] from the parser's error taxonomy. */
     public data class Failure(public val kind: ErrorKind) : WorkbookLoad

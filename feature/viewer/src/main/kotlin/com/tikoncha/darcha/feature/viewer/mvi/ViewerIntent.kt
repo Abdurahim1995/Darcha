@@ -1,5 +1,6 @@
 package com.tikoncha.darcha.feature.viewer.mvi
 
+import com.tikoncha.darcha.feature.viewer.data.SheetSnapshot
 import com.tikoncha.darcha.feature.viewer.data.WorkbookSource
 import com.tikoncha.darcha.model.ErrorKind
 
@@ -60,8 +61,11 @@ public sealed interface ParseEvent : ViewerEvent {
     /** Progressive loading advanced to [progress] (`0f..1f`). */
     public data class Progress(public val progress: Float) : ParseEvent
 
-    /** The document loaded successfully. */
-    public data class Loaded(public val meta: DocumentMeta) : ParseEvent
+    /** The document loaded successfully, with its first sheet ready to draw. */
+    public data class Loaded(
+        public val meta: DocumentMeta,
+        public val sheet: SheetSnapshot,
+    ) : ParseEvent
 
     /** The document failed to load. */
     public data class Failed(public val kind: ErrorKind) : ParseEvent

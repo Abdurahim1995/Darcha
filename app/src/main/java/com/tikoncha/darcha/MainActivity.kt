@@ -74,6 +74,8 @@ class MainActivity : ComponentActivity() {
                         state = state,
                         onOpenFile = { picker.launch(OPEN_DOCUMENT_MIME_TYPES) },
                         onRetry = { viewModel.dispatch(ViewerIntent.Retry) },
+                        onScroll = { dx, dy -> viewModel.dispatch(ViewerIntent.Scroll(dx, dy)) },
+                        onZoom = { scale -> viewModel.dispatch(ViewerIntent.Zoom(scale, 0f, 0f)) },
                     )
                 }
             }

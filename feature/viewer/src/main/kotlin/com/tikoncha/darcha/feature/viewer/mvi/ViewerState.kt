@@ -1,5 +1,6 @@
 package com.tikoncha.darcha.feature.viewer.mvi
 
+import com.tikoncha.darcha.feature.viewer.data.SheetSnapshot
 import com.tikoncha.darcha.model.ErrorKind
 
 /**
@@ -71,12 +72,14 @@ public sealed interface ViewerState {
      * A document is open and renderable.
      *
      * @property docMeta the open document's name and sheets.
+     * @property sheet the active worksheet's cells and layout, ready to draw.
      * @property activeSheetId index into [DocumentMeta.sheetNames].
      * @property viewport current scroll/zoom.
      * @property selection the selected cell, or `null` if nothing is selected.
      */
     public data class Ready(
         public val docMeta: DocumentMeta,
+        public val sheet: SheetSnapshot,
         public val activeSheetId: Int,
         public val viewport: Viewport,
         public val selection: CellRef?,

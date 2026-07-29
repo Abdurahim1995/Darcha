@@ -76,7 +76,7 @@ public class ViewerViewModel(
                 apply(ParseEvent.Progress(progress))
             }
             when (result) {
-                is WorkbookLoad.Success -> apply(ParseEvent.Loaded(result.meta))
+                is WorkbookLoad.Success -> apply(ParseEvent.Loaded(result.meta, result.sheet))
                 is WorkbookLoad.Failure -> apply(ParseEvent.Failed(result.kind))
             }
         }

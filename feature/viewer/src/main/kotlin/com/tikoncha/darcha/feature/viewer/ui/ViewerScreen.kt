@@ -34,7 +34,20 @@ public fun ViewerScreen(
     onOpenFile: () -> Unit,
     onRetry: () -> Unit,
     modifier: Modifier = Modifier,
+    onScroll: (dx: Float, dy: Float) -> Unit = { _, _ -> },
+    onZoom: (scale: Float) -> Unit = {},
 ) {
+    if (state is ViewerState.Ready) {
+        GridScreen(
+            state = state,
+            onOpenFile = onOpenFile,
+            onScroll = onScroll,
+            onZoom = onZoom,
+            modifier = modifier,
+        )
+        return
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -63,16 +76,9 @@ public fun ViewerScreen(
                 )
             }
 
-            is ViewerState.Ready -> {
-                Text(state.docMeta.displayName, style = MaterialTheme.typography.titleMedium)
-                Text(
-                    // The T11 acceptance line: counts, not cells.
-                    text = "Loaded: ${state.docMeta.rowCount} rows · ${state.docMeta.sheetNames.size} sheets",
-                    style = MaterialTheme.typography.bodyLarge,
-                    modifier = Modifier.padding(top = 8.dp, bottom = 24.dp),
-                )
-                Button(onClick = onOpenFile) { Text("Open another file") }
-            }
+            // The grid takes over the screen; it manages its own layout, so it is
+            // handled outside this centred Column (see below).
+            is ViewerState.Ready -> Unit
 
             is ViewerState.Error -> {
                 Text("Could not open the file", style = MaterialTheme.typography.titleMedium)

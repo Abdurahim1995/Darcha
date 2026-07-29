@@ -1,5 +1,6 @@
 package com.tikoncha.darcha.feature.viewer.mvi
 
+import com.tikoncha.darcha.feature.viewer.data.SheetSnapshot
 import com.tikoncha.darcha.feature.viewer.data.WorkbookSource
 import com.tikoncha.darcha.model.ErrorKind
 import org.junit.Assert.assertEquals
@@ -29,7 +30,7 @@ class ViewerReducerTest {
         activeSheetId: Int = 0,
         viewport: Viewport = Viewport.INITIAL,
         selection: CellRef? = null,
-    ) = ViewerState.Ready(meta, activeSheetId, viewport, selection)
+    ) = ViewerState.Ready(meta, SheetSnapshot.EMPTY, activeSheetId, viewport, selection)
 
     // --- the happy path: open -> parsing -> ready ---
 
@@ -57,7 +58,7 @@ class ViewerReducerTest {
 
     @Test
     fun loaded_fromParsing_becomesReadyOnFirstSheet() {
-        val next = reduce(ViewerState.Parsing(0.9f), ParseEvent.Loaded(meta))
+        val next = reduce(ViewerState.Parsing(0.9f), ParseEvent.Loaded(meta, SheetSnapshot.EMPTY))
         assertEquals(ready(), next)
     }
 
@@ -92,7 +93,7 @@ class ViewerReducerTest {
     fun lateParseEvents_afterFailure_cannotResurrectParsing() {
         val error = ViewerState.Error(ErrorKind.TooLarge("too many cells"))
         assertSame(error, reduce(error, ParseEvent.Progress(0.5f)))
-        assertSame(error, reduce(error, ParseEvent.Loaded(meta)))
+        assertSame(error, reduce(error, ParseEvent.Loaded(meta, SheetSnapshot.EMPTY)))
     }
 
     @Test
@@ -195,7 +196,7 @@ class ViewerReducerTest {
         state = reduce(state, ViewerIntent.OpenFile(source))
         assertTrue(state is ViewerState.Parsing)
         state = reduce(state, ParseEvent.Progress(0.5f))
-        state = reduce(state, ParseEvent.Loaded(meta))
+        state = reduce(state, ParseEvent.Loaded(meta, SheetSnapshot.EMPTY))
         state = reduce(state, ViewerIntent.Scroll(dx = 80f, dy = 20f))
         state = reduce(state, ViewerIntent.SwitchSheet(1))
 

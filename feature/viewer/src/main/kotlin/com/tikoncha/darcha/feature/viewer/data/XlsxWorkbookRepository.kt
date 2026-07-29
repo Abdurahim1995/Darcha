@@ -234,10 +234,17 @@ public class XlsxWorkbookRepository(
 
         return when (result) {
             is ParseResult.Ok -> WorkbookLoad.Success(
-                DocumentMeta(
+                meta = DocumentMeta(
                     displayName = displayName,
                     sheetNames = workbook.sheets.map { it.name },
                     rowCount = result.value.data.rows.size,
+                ),
+                // The raw cells travel to the renderer as-is; display strings are
+                // resolved lazily while drawing (TECH_SPEC §8).
+                sheet = SheetSnapshot(
+                    data = result.value.data,
+                    layout = result.value.layout,
+                    sharedStrings = workbook.sharedStrings,
                 ),
             )
             is ParseResult.Err -> WorkbookLoad.Failure(result.kind)

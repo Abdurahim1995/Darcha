@@ -1,6 +1,7 @@
 package com.tikoncha.darcha.feature.viewer.data
 
 import com.tikoncha.darcha.model.ErrorKind
+import com.tikoncha.darcha.model.SheetLayout
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -66,6 +67,20 @@ class XlsxWorkbookRepositoryTest {
         assertEquals(4, meta.rowCount)
         assertTrue("progress should have been reported", progress.isNotEmpty())
         assertTrue("progress must stay in 0f..1f", progress.all { it in 0f..1f })
+    }
+
+    @Test
+    fun success_carriesTheSheetTheRendererWillDraw() = runBlocking {
+        // T13 draws from this snapshot, so the load must hand back real cells,
+        // not just counts.
+        val result = repository().load(BytesSource(workbookBytes(rows = 3))) {}
+
+        val sheet = (result as WorkbookLoad.Success).sheet
+        assertEquals(3, sheet.data.rows.size)
+        assertEquals(9, sheet.data.cellCount) // 3 rows x 3 cells
+        assertEquals(com.tikoncha.darcha.model.CellValue.Number(1.0), sheet.data.cellAt(0, 0))
+        assertEquals(com.tikoncha.darcha.model.CellValue.Number(6.0), sheet.data.cellAt(1, 2))
+        assertEquals(SheetLayout.DEFAULT_COL_WIDTH, sheet.layout.defaultColWidth, 0.0)
     }
 
     @Test

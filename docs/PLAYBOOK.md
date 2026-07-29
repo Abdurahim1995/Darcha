@@ -25,7 +25,7 @@ Prerequisites in repo: `CLAUDE.md` (root), `docs/TECH_SPEC.md`, this file.
 > **M1 exit criteria — met.** The parser reads real Excel output, not just our own; every assertion was read out of the committed files. `gsheets/`, `libreoffice/` and `wps/` remain optional future additions — recipes are in `docs/FIXTURE_RECIPES.md` and the check script is in place.
 
 **M2 — Raw grid on screen**
-- [x] T10 MVI foundation · [x] T11 File loading · [x] T12 Geometry engine · [ ] T13 Canvas render · [ ] T14 Scroll+fling · [ ] T15 Sheet tabs + perf gate
+- [x] T10 MVI foundation · [x] T11 File loading · [x] T12 Geometry engine · [x] T13 Canvas render · [ ] T14 Scroll+fling · [ ] T15 Sheet tabs + perf gate
 
 **M3 — Fidelity**
 - [ ] T16 Format engine · [ ] T17 Style render · [ ] T18 Merged cells · [ ] T19 Frozen panes · [ ] T20 Pinch zoom

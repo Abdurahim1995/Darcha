@@ -1,5 +1,6 @@
 package com.tikoncha.darcha.feature.viewer
 
+import com.tikoncha.darcha.feature.viewer.data.SheetSnapshot
 import com.tikoncha.darcha.feature.viewer.data.WorkbookLoad
 import com.tikoncha.darcha.feature.viewer.data.WorkbookRepository
 import com.tikoncha.darcha.feature.viewer.data.WorkbookSource
@@ -77,12 +78,12 @@ class ViewerViewModelTest {
 
     @Test
     fun initialState_isIdle() {
-        assertEquals(ViewerState.Idle, viewModel(FakeRepository(WorkbookLoad.Success(meta))).state.value)
+        assertEquals(ViewerState.Idle, viewModel(FakeRepository(WorkbookLoad.Success(meta, SheetSnapshot.EMPTY))).state.value)
     }
 
     @Test
     fun openFile_endsReadyWithMetadata() {
-        val vm = viewModel(FakeRepository(WorkbookLoad.Success(meta), progress = listOf(0.5f, 1f)))
+        val vm = viewModel(FakeRepository(WorkbookLoad.Success(meta, SheetSnapshot.EMPTY), progress = listOf(0.5f, 1f)))
         vm.dispatch(ViewerIntent.OpenFile(source))
 
         val state = vm.state.value as ViewerState.Ready
@@ -115,7 +116,7 @@ class ViewerViewModelTest {
 
     @Test
     fun retry_withoutAnyOpen_isIgnored() {
-        val repository = FakeRepository(WorkbookLoad.Success(meta))
+        val repository = FakeRepository(WorkbookLoad.Success(meta, SheetSnapshot.EMPTY))
         val vm = viewModel(repository)
 
         vm.dispatch(ViewerIntent.Retry)
@@ -126,7 +127,7 @@ class ViewerViewModelTest {
 
     @Test
     fun gestureIntents_afterReady_updateViewport() {
-        val vm = viewModel(FakeRepository(WorkbookLoad.Success(meta)))
+        val vm = viewModel(FakeRepository(WorkbookLoad.Success(meta, SheetSnapshot.EMPTY)))
         vm.dispatch(ViewerIntent.OpenFile(source))
 
         vm.dispatch(ViewerIntent.Scroll(dx = 60f, dy = 25f))
@@ -140,7 +141,7 @@ class ViewerViewModelTest {
 
     @Test
     fun switchSheet_resetsViewport() {
-        val vm = viewModel(FakeRepository(WorkbookLoad.Success(meta)))
+        val vm = viewModel(FakeRepository(WorkbookLoad.Success(meta, SheetSnapshot.EMPTY)))
         vm.dispatch(ViewerIntent.OpenFile(source))
         vm.dispatch(ViewerIntent.Scroll(dx = 300f, dy = 400f))
 
@@ -154,7 +155,7 @@ class ViewerViewModelTest {
     @Test
     fun clearing_closesTheOpenDocument() {
         // The temp copy behind the document must not outlive the screen.
-        val repository = FakeRepository(WorkbookLoad.Success(meta))
+        val repository = FakeRepository(WorkbookLoad.Success(meta, SheetSnapshot.EMPTY))
         val vm = viewModel(repository)
         vm.dispatch(ViewerIntent.OpenFile(source))
 
@@ -166,7 +167,7 @@ class ViewerViewModelTest {
 
     @Test
     fun openingASecondFile_reloadsAndResetsState() {
-        val repository = FakeRepository(WorkbookLoad.Success(meta))
+        val repository = FakeRepository(WorkbookLoad.Success(meta, SheetSnapshot.EMPTY))
         val vm = viewModel(repository)
 
         vm.dispatch(ViewerIntent.OpenFile(source))

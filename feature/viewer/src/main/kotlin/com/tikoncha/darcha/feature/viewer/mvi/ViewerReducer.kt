@@ -74,6 +74,7 @@ public object ViewerReducer {
                 if (state is ViewerState.Parsing) {
                     ViewerState.Ready(
                         docMeta = event.meta,
+                        sheet = event.sheet,
                         activeSheetId = 0,
                         viewport = Viewport.INITIAL,
                         selection = null,
