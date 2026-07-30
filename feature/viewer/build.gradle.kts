@@ -20,6 +20,17 @@ android {
     buildFeatures {
         compose = true
     }
+
+    sourceSets {
+        // The end-to-end test (T17) runs a real fixture through parser →
+        // formatter, so it needs the golden corpus on its test classpath. It is
+        // referenced where it lives rather than copied: the corpus has exactly
+        // one home (CLAUDE.md rule 5), and a second copy would drift. This adds
+        // no file to :core:parser and changes nothing about how it builds.
+        getByName("test") {
+            resources.srcDir("../../core/parser/src/test/resources")
+        }
+    }
 }
 
 kotlin {

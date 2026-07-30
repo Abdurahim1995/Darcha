@@ -417,12 +417,59 @@ def gen_big_50k_wide() -> None:
     print(f"  wrote {path.relative_to(REPO_ROOT)}  ({ROWS} rows, custom widths, NOT committed)")
 
 
+def gen_styled_20k() -> None:
+    """A heavily styled 20k-row sheet — the T17 render/cache measurement.
+
+    Every row carries a fill, a font colour, bold/italic and an alignment,
+    cycling through eight combinations, plus a repeated category column so the
+    *same text* appears under many styles. That is the case that multiplies text
+    cache keys once the key includes the style id.
+
+    Deliberately **not** committed, like `big-50k-wide.xlsx`: it is a measurement
+    aid, not a golden fixture. Regenerate when re-measuring, then delete it.
+    See docs/PERF.md.
+    """
+    from openpyxl.styles import Alignment, Font, PatternFill
+
+    ROWS = 20_000
+    CATEGORIES = ("alpha", "beta", "gamma", "delta", "epsilon", "zeta")
+    FILLS = ("FFFFF2CC", "FFD9E1F2", "FFE2EFDA", "FFFCE4D6")
+
+    wb = _new_workbook(first_sheet="Styled")
+    ws = wb.active
+    ws.append(["id", "value", "delta", "count", "pct", "category", "when"])
+    for i in range(1, ROWS + 1):
+        ws.append([
+            i,
+            (i * 7) % 1000,
+            round((i % 97) / 97.0, 4),
+            i * 3,
+            round((i % 100) / 100.0, 2),
+            CATEGORIES[i % len(CATEGORIES)],
+            dt.date(2024, 1, 1) + dt.timedelta(days=i % 365),
+        ])
+        k = i % 8
+        for cell in ws[i + 1]:
+            cell.font = Font(
+                bold=(k % 2 == 0),
+                italic=(k % 3 == 0),
+                color=("FFC00000" if k % 4 == 0 else "FF1F3864"),
+            )
+            cell.fill = PatternFill("solid", fgColor=FILLS[k % 4])
+            cell.alignment = Alignment(horizontal=("center" if k % 3 == 0 else "right"))
+        ws.cell(row=i + 1, column=7).number_format = "yyyy-mm-dd"
+
+    _save(wb, "styled-20k.xlsx")
+    print("    (20000 rows, 8 style combinations, NOT committed)")
+
+
 def main() -> None:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     if "big" in sys.argv[1:]:
         print("Generating the 50k-row performance fixtures ...")
         gen_big_50k()
         gen_big_50k_wide()
+        gen_styled_20k()
         print("Done.")
         return
     print(f"Generating synthetic fixtures into {OUT_DIR.relative_to(REPO_ROOT)} ...")

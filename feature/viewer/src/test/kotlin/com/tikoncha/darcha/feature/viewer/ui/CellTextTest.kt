@@ -1,11 +1,18 @@
 package com.tikoncha.darcha.feature.viewer.ui
 
-import com.tikoncha.darcha.model.CellValue
-import com.tikoncha.darcha.model.StringTable
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Tests for the renderer's text helpers: labels, display text, and the cache key. */
+/**
+ * Tests for the renderer's text helpers: column labels and the measurement cache.
+ *
+ * What a cell *says* is no longer decided here — `ValueFormatter` in
+ * `:core:model` owns that since T16, and `ValueFormatterTest` covers it. What is
+ * left is what the renderer itself is responsible for: naming columns, and never
+ * handing back a measurement taken under a different style or zoom.
+ */
 class CellTextTest {
 
     @Test
@@ -21,41 +28,88 @@ class CellTextTest {
     }
 
     @Test
-    fun sharedText_resolvesThroughTheTable() {
-        val strings = StringTable(listOf("apple", "banana"))
-        assertEquals("apple", CellValue.SharedText(0).displayText(strings))
-        assertEquals("banana", CellValue.SharedText(1).displayText(strings))
-        // A dangling index renders blank rather than crashing the draw pass.
-        assertEquals("", CellValue.SharedText(9).displayText(strings))
-    }
-
-    @Test
-    fun otherValueKinds_renderRaw() {
-        val none = StringTable.EMPTY
-        assertEquals("hello", CellValue.InlineText("hello").displayText(none))
-        assertEquals("TRUE", CellValue.Bool(true).displayText(none))
-        assertEquals("FALSE", CellValue.Bool(false).displayText(none))
-        assertEquals("#DIV/0!", CellValue.Error("#DIV/0!").displayText(none))
-    }
-
-    @Test
-    fun wholeNumbers_dropTheDecimalTail() {
-        val none = StringTable.EMPTY
-        // A count should read "30", not "30.0".
-        assertEquals("30", CellValue.Number(30.0).displayText(none))
-        assertEquals("0", CellValue.Number(0.0).displayText(none))
-        assertEquals("50000", CellValue.Number(50_000.0).displayText(none))
-        // Fractions keep their precision until T16's format engine takes over.
-        assertEquals("12.5", CellValue.Number(12.5).displayText(none))
-        assertEquals("0.75", CellValue.Number(0.75).displayText(none))
-    }
-
-    @Test
     fun zoomBuckets_quantizeToTenths() {
         assertEquals(10, CellTextCache.zoomBucketOf(1f))
         assertEquals(10, CellTextCache.zoomBucketOf(1.02f)) // same bucket, no re-measure
         assertEquals(11, CellTextCache.zoomBucketOf(1.06f))
         assertEquals(20, CellTextCache.zoomBucketOf(2f))
         assertEquals(5, CellTextCache.zoomBucketOf(0.5f))
+    }
+
+    // --- the cache key (T17 added the style id) ---
+
+    /**
+     * Why the style id is in the key: bold and normal are different glyphs, so
+     * reusing one measurement for the other would give the wrong width and clip
+     * the text in the wrong place.
+     */
+    @Test
+    fun theSameText_underTwoStyles_isMeasuredTwice() {
+        val cache = CellTextCache<String>()
+        var measurements = 0
+        fun measure(text: String, styleId: Int) =
+            cache.get(text, styleId, zoom = 1f) { measurements++; "$text@$styleId" }
+
+        assertEquals("Total@0", measure("Total", 0))
+        assertEquals("Total@1", measure("Total", 1))
+        assertEquals(2, measurements)
+        assertEquals(2, cache.size)
+
+        // ...and each is then served from the cache.
+        assertEquals("Total@0", measure("Total", 0))
+        assertEquals("Total@1", measure("Total", 1))
+        assertEquals("no further measuring", 2, measurements)
+        assertNotEquals(measure("Total", 0), measure("Total", 1))
+    }
+
+    @Test
+    fun theSameTextAndStyle_atAnotherZoom_isMeasuredAgain() {
+        val cache = CellTextCache<String>()
+        var measurements = 0
+        cache.get("42", styleId = 0, zoom = 1f) { measurements++; "small" }
+        cache.get("42", styleId = 0, zoom = 2f) { measurements++; "large" }
+        assertEquals(2, measurements)
+        // A nudge inside the same bucket does not re-measure.
+        cache.get("42", styleId = 0, zoom = 1.02f) { measurements++; "nope" }
+        assertEquals(2, measurements)
+    }
+
+    @Test
+    fun headerLabels_cannotCollideWithACellStyle() {
+        val cache = CellTextCache<String>()
+        // A column labelled "1" and a cell containing 1 both render the text "1".
+        val header = cache.get("1", CellTextCache.HEADER_STYLE_ID, 1f) { "header" }
+        val cell = cache.get("1", styleId = 0, zoom = 1f) { "cell" }
+        assertEquals("header", header)
+        assertEquals("cell", cell)
+        assertTrue("header ids are negative", CellTextCache.HEADER_STYLE_ID < 0)
+    }
+
+    @Test
+    fun theLeastRecentlyUsedEntryIsEvicted() {
+        val cache = CellTextCache<String>(maxEntries = 2)
+        cache.get("a", 0, 1f) { "a" }
+        cache.get("b", 0, 1f) { "b" }
+        cache.get("a", 0, 1f) { "re-measured" } // touch a, so b becomes the oldest
+        cache.get("c", 0, 1f) { "c" }
+
+        assertEquals(2, cache.size)
+        assertEquals("a survived", "a", cache.get("a", 0, 1f) { "re-measured" })
+    }
+
+    @Test
+    fun hitRate_tracksWhatWasReused() {
+        val cache = CellTextCache<String>()
+        assertEquals("nothing asked for yet", 0f, cache.hitRate, 0f)
+        cache.get("x", 0, 1f) { "x" } // miss
+        cache.get("x", 0, 1f) { "x" } // hit
+        cache.get("x", 0, 1f) { "x" } // hit
+        assertEquals(2, cache.hits)
+        assertEquals(1, cache.misses)
+        assertEquals(2f / 3f, cache.hitRate, 1e-6f)
+
+        cache.clear()
+        assertEquals(0, cache.size)
+        assertEquals(0, cache.hits)
     }
 }

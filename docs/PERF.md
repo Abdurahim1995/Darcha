@@ -95,10 +95,35 @@ changes.
 | `big-50k-rows.xlsx`, portrait, top of sheet | 37 × 7 = **259** |
 | `multisheet.xlsx`, landscape | 15 × 13 = **195** |
 | `sparse-gaps.xlsx`, scrolled to `AA100` (viewport at x=4608, y=6272) | 31 × 7 = **217** |
+| `styled-20k.xlsx`, portrait, every cell filled and styled (T17) | 37 × 7 = **259** |
 
-The count is a function of window size and zoom only. Scrolling 50,000 rows deep
-or into a sheet whose used range ends at `AA100` does not change it — which is
-the whole point of the culling.
+The count is a function of window size and zoom only. Scrolling 50,000 rows deep,
+into a sheet whose used range ends at `AA100`, or into one where every cell
+carries a fill and a font does not change it — which is the whole point of the
+culling. **T17 added styling without adding a single drawn cell.**
+
+## Text measurement cache (T17)
+
+The cache key gained the style id in T17 — bold, italic and colour are different
+glyphs, so one measurement can no longer serve two styles. That multiplies keys
+wherever the same text appears under different styles, so the capacity was
+re-checked rather than assumed.
+
+Measured by scrolling ~200 rows and reading the `Darcha.Grid` log:
+
+| Sheet | Styles | Live keys | Hit rate at 2048 |
+|---|---|---|---|
+| `big-50k-rows.xlsx` | 1 | **1,109–1,111** | 100% |
+| `styled-20k.xlsx` — fill, colour, bold/italic and alignment cycling over 8 combinations | 8 | **1,756** | 100% |
+
+The old capacity was **512**. On both sheets the cache sat pegged at exactly 512
+entries — saturated, evicting layouts still on screen — against a working set of
+2–3.4× that. 2,048 holds both with room to spare; the heavily styled sheet is the
+worst case at 86% full, and a viewport is only ~260 cells, so that is still about
+eight screens of slack before an entry that is still visible can be evicted.
+
+Java heap with 1,756 layouts cached: **21.9 MB** (`dumpsys meminfo`, total PSS
+100 MB). Growing the cache four times over cost single-digit megabytes.
 
 ## Scroll
 
@@ -109,6 +134,30 @@ not a substitute for a human hand on glass):
 - A flick glides and decays to a stop.
 - Scrolling clamps at the used range: on the 7-column fixture the offset stops at
   `x=912` and repeated flicks do not move it further.
+
+### Frame times — did T17 cost anything?
+
+`dumpsys gfxinfo` percentiles over 12 injected flings per run, three runs per
+build, same device session. Styling adds per-cell fill rects and a formatter
+call, so this needed checking rather than assuming.
+
+| Build | 50th | 90th | 95th | 99th |
+|---|---|---|---|---|
+| T16 (before styling) | 15 / 15 / 16 ms | 24 / 23 / 26 | 27 / 27 / 31 | 34 / 32 / 40 |
+| T17 (after styling) | 18 / 16 / 15 ms | 30 / 25 / 25 | 34 / 28 / 29 | 61 / 34 / 36 |
+
+**No regression once warm.** The first scroll after opening a document is a
+little slower — every `(text, styleId)` pair has to be measured once — and from
+the second run the two builds are indistinguishable.
+
+Two honesty notes about this method. `Janky frames %` is useless here: injected
+swipes are flagged as high-input-latency, which counts as jank whatever the
+renderer does (391–418 of ~460 frames in every run, before and after). And the
+device drifts thermally over a long session — later runs are 2–4 ms slower
+across the board — so **only runs close together in time are comparable.** For
+that reason the 512-vs-2048 cache capacity comparison came out inconclusive on
+frame times, and the capacity decision rests on the working-set measurement
+above, not on a frame-time win.
 
 Fling parameters live in `FlingDecay`: geometric decay at **0.95 per frame**,
 stopping below **40 px/s**, giving a glide of roughly `v₀ × 0.33 s` — about
@@ -137,6 +186,10 @@ measure, then delete it:
 python3 tools/gen_fixtures.py big
 ```
 
-That writes both `big-50k-rows.xlsx` and `big-50k-wide.xlsx`. Push the wide one,
-open it, and screenshot once while the progress bar is still up and once after it
-disappears; the grid body of the two frames must be identical.
+That writes `big-50k-rows.xlsx`, `big-50k-wide.xlsx` and `styled-20k.xlsx`. Push
+the wide one, open it, and screenshot once while the progress bar is still up and
+once after it disappears; the grid body of the two frames must be identical.
+
+`styled-20k.xlsx` is the T17 styling and cache measurement. Neither of the extra
+two is committed — they are measurement aids, not golden fixtures, and would
+double the corpus for no assertion. Delete them when you are done.

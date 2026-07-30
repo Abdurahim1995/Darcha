@@ -1,9 +1,5 @@
 package com.tikoncha.darcha.feature.viewer.ui
 
-import androidx.compose.ui.text.TextLayoutResult
-import com.tikoncha.darcha.model.CellValue
-import com.tikoncha.darcha.model.StringTable
-import kotlin.math.abs
 import kotlin.math.roundToLong
 
 /**
@@ -22,62 +18,92 @@ internal fun columnLabel(index: Int): String {
 }
 
 /**
- * The text to draw for a cell.
- *
- * Deliberately raw (TECH_SPEC §8 keeps values unformatted): shared strings are
- * resolved through [strings], and a number is printed without an exponent when
- * it is whole, so `30` does not render as `30.0`. Real number and date
- * formatting is the format engine's job in T16.
- */
-internal fun CellValue.displayText(strings: StringTable): String = when (this) {
-    is CellValue.SharedText -> strings[index].orEmpty()
-    is CellValue.InlineText -> text
-    is CellValue.Bool -> if (value) "TRUE" else "FALSE"
-    is CellValue.Error -> code
-    is CellValue.Number -> {
-        val rounded = value.roundToLong()
-        if (abs(value - rounded) < WHOLE_NUMBER_EPSILON) rounded.toString() else value.toString()
-    }
-}
-
-private const val WHOLE_NUMBER_EPSILON = 1e-9
-
-/**
  * A bounded LRU cache of measured text (TECH_SPEC §9 — "measuring is expensive").
  *
- * Keyed by the text and the zoom bucket, since a layout is only reusable at the
- * size it was measured for. Zoom is bucketed rather than exact so that a pinch
- * does not invalidate every entry on every frame (T20 quantizes to 0.1).
+ * Keyed by the text, the **style id** and the zoom bucket. The style id joined
+ * the key in T17: bold, italic and colour all change the glyphs, so the same
+ * string measured under two styles is two different layouts. Zoom is bucketed
+ * rather than exact so that a pinch does not invalidate every entry on every
+ * frame (T20 quantizes to 0.1).
+ *
+ * Style ids only mean anything inside one workbook, so a cache must not outlive
+ * the document it was filled for.
  *
  * Not thread-safe: it is touched only from the draw pass.
  *
+ * Generic in the cached type only so the keying can be unit-tested without a
+ * Compose runtime; production always caches a `TextLayoutResult`.
+ *
  * @param maxEntries how many layouts to keep; the least recently used is evicted.
  */
-internal class CellTextCache(private val maxEntries: Int = DEFAULT_MAX_ENTRIES) {
+internal class CellTextCache<V>(private val maxEntries: Int = DEFAULT_MAX_ENTRIES) {
 
-    private data class Key(val text: String, val zoomBucket: Int)
+    private data class Key(val text: String, val styleId: Int, val zoomBucket: Int)
 
     /** `accessOrder = true` makes this a genuine LRU rather than insertion-ordered. */
-    private val entries = object : LinkedHashMap<Key, TextLayoutResult>(16, 0.75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Key, TextLayoutResult>) =
-            size > maxEntries
+    private val entries = object : LinkedHashMap<Key, V>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Key, V>) = size > maxEntries
     }
 
     /** Number of cached layouts — for tests and diagnostics. */
     val size: Int get() = entries.size
 
-    /** The layout for [text] at [zoom], measuring with [measure] on a miss. */
-    fun get(text: String, zoom: Float, measure: () -> TextLayoutResult): TextLayoutResult =
-        entries.getOrPut(Key(text, zoomBucketOf(zoom))) { measure() }
-
     /**
-     * Drop everything. Entries stay valid across sheets — the key is the text and
-     * the zoom — so only a change of text style invalidates them (T17).
+     * The layout for [text] under [styleId] at [zoom], measuring with [measure]
+     * on a miss.
+     *
+     * Header labels pass [HEADER_STYLE_ID], which no cell style can collide with.
      */
-    fun clear(): Unit = entries.clear()
+    fun get(
+        text: String,
+        styleId: Int,
+        zoom: Float,
+        measure: () -> V,
+    ): V {
+        val key = Key(text, styleId, zoomBucketOf(zoom))
+        val cached = entries[key]
+        if (cached != null) {
+            hits++
+            return cached
+        }
+        misses++
+        return measure().also { entries[key] = it }
+    }
+
+    /** Layouts served from the cache, and layouts that had to be measured. */
+    var hits: Int = 0
+        private set
+    var misses: Int = 0
+        private set
+
+    /** Hit rate in `0f..1f`, or `0f` before anything has been asked for. */
+    val hitRate: Float
+        get() = if (hits + misses == 0) 0f else hits.toFloat() / (hits + misses)
+
+    /** Drop everything, counters included. */
+    fun clear() {
+        entries.clear()
+        hits = 0
+        misses = 0
+    }
 
     companion object {
-        private const val DEFAULT_MAX_ENTRIES = 512
+        /**
+         * How many layouts to keep.
+         *
+         * A portrait viewport draws at most ~480 cells, and every one of them
+         * could be a distinct `(text, styleId)` pair. 512 held barely one screen
+         * — fine while the key ignored style, thrashing once it did not. This is
+         * roughly four screens, so scrolling back over cells just left behind
+         * still hits. Measured hit rates are in docs/PERF.md.
+         */
+        private const val DEFAULT_MAX_ENTRIES = 2_048
+
+        /**
+         * The style id used for the row-number and column-letter strips. Cell
+         * style ids are non-negative, so this cannot collide with one.
+         */
+        const val HEADER_STYLE_ID: Int = -1
 
         /** Zoom quantized to 0.1 steps, so nearby zooms share measurements. */
         fun zoomBucketOf(zoom: Float): Int = (zoom * 10f).roundToLong().toInt()

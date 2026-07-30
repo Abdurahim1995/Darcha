@@ -1,6 +1,7 @@
 package com.tikoncha.darcha.model
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -307,6 +308,48 @@ class ValueFormatterTest {
             Case(CellValue.SharedText(9), GENERAL, "", note = "an index past the table"),
         ),
     )
+
+    // --- name tables are an input, not a constant (T17) ---
+
+    @Test
+    fun nameTokens_useTheSuppliedNames() {
+        // T24 will pass Uzbek names; nothing in :core:model knows a locale.
+        val uzbek = DateNames(
+            months = listOf(
+                "yanvar", "fevral", "mart", "aprel", "may", "iyun",
+                "iyul", "avgust", "sentabr", "oktabr", "noyabr", "dekabr",
+            ),
+            days = listOf(
+                "yakshanba", "dushanba", "seshanba", "chorshanba",
+                "payshanba", "juma", "shanba",
+            ),
+        )
+        val serial = CellValue.Number(45306.0) // 2024-01-15, a Monday
+
+        assertEquals(
+            "dushanba, 15 yanvar 2024",
+            ValueFormatter.format(serial, dateFmt(180, "dddd, d mmmm yyyy"), names = uzbek),
+        )
+        assertEquals(
+            "yan 15",
+            ValueFormatter.format(serial, dateFmt(181, "mmm d"), names = uzbek),
+        )
+    }
+
+    /** Numeric month and day tokens must stay numeric whatever the names are. */
+    @Test
+    fun numericTokens_areUnaffectedByTheNameTable() = check(
+        listOf(
+            Case(num(45306.0), dateFmt(14, "mm-dd-yy"), "01-15-24", note = "mm is a number"),
+            Case(num(45306.0), dateFmt(182, "m/d"), "1/15"),
+        ),
+    )
+
+    @Test
+    fun aNameTableOfTheWrongSize_isRejected() {
+        val tooFew = runCatching { DateNames(months = listOf("Jan"), days = DateNames.ENGLISH.days) }
+        assertTrue(tooFew.exceptionOrNull() is IllegalArgumentException)
+    }
 
     @Test
     fun defaults_areGeneralAndThe1900Epoch() {

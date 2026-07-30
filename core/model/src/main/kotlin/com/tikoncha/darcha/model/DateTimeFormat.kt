@@ -9,11 +9,10 @@ package com.tikoncha.darcha.model
  * through the same tokenizer as a custom code, so "implemented exactly" and
  * "implemented once" are the same thing here.
  *
- * **Month and day names are English.** Excel resolves them against the
- * authoring locale, which is not recorded in a way a viewer can trust. English
- * is Excel's own default and is at least predictable. None of the builtin date
- * formats use a name token — only custom codes with `mmm`/`dddd` and friends do.
- * Revisit with the rest of the localization work (T24).
+ * Month and weekday names come in as [DateNames] rather than living here: Excel
+ * resolves them per locale, so they belong to the caller (T24 supplies Uzbek
+ * ones). None of the builtin date formats spell a name out — only custom codes
+ * with `mmm`/`dddd` and friends do.
  */
 internal object DateTimeFormat {
 
@@ -23,8 +22,9 @@ internal object DateTimeFormat {
      *
      * @param serial the cell's raw value: whole days plus a fraction of a day.
      * @param date1904 the workbook's epoch flag.
+     * @param names the names to spell `mmm`/`dddd` and friends with.
      */
-    fun render(serial: Double, code: String, date1904: Boolean): String? {
+    fun render(serial: Double, code: String, date1904: Boolean, names: DateNames): String? {
         val tokens = resolveMonths(tokenize(firstSection(code)))
         if (tokens.none { it.isTemporal }) return null
 
@@ -59,9 +59,9 @@ internal object DateTimeFormat {
                 when (token) {
                     is Token.Literal -> token.text
                     is Token.Year -> year(date.year, token.width)
-                    is Token.Month -> month(date.month, token.width)
+                    is Token.Month -> month(date.month, token.width, names)
                     is Token.Minute -> pad(minute.toLong(), token.width)
-                    is Token.Day -> day(date, token.width)
+                    is Token.Day -> day(date, token.width, names)
                     is Token.Hour -> pad(displayHour(hour, twelveHour).toLong(), token.width)
                     is Token.Second -> pad(second.toLong(), token.width)
                     is Token.SubSecond -> "." + pad(subTicks, token.decimals)
@@ -285,18 +285,13 @@ internal object DateTimeFormat {
     private fun year(year: Int, width: Int): String =
         if (width <= 2) pad((year % 100).toLong(), 2) else pad(year.toLong(), 4)
 
-    private fun month(month: Int, width: Int): String = when {
-        width >= 5 -> MONTH_NAMES[month - 1].take(1)
-        width == 4 -> MONTH_NAMES[month - 1]
-        width == 3 -> MONTH_NAMES[month - 1].take(3)
-        else -> pad(month.toLong(), width)
-    }
+    /** `m`/`mm` are the month number; `mmm` and longer spell the name out. */
+    private fun month(month: Int, width: Int, names: DateNames): String =
+        if (width >= 3) names.month(month, width) else pad(month.toLong(), width)
 
-    private fun day(date: ExcelDate, width: Int): String = when {
-        width >= 4 -> DAY_NAMES[date.dayOfWeek]
-        width == 3 -> DAY_NAMES[date.dayOfWeek].take(3)
-        else -> pad(date.day.toLong(), width)
-    }
+    /** `d`/`dd` are the day of the month; `ddd` and longer are the weekday name. */
+    private fun day(date: ExcelDate, width: Int, names: DateNames): String =
+        if (width >= 3) names.day(date.dayOfWeek, width) else pad(date.day.toLong(), width)
 
     private fun displayHour(hour: Int, twelveHour: Boolean): Int {
         if (!twelveHour) return hour
@@ -326,13 +321,4 @@ internal object DateTimeFormat {
     private const val MINUTES_PER_DAY = 1_440L
     private const val HOURS_PER_DAY = 24L
 
-    private val MONTH_NAMES = arrayOf(
-        "January", "February", "March", "April", "May", "June",
-        "July", "August", "September", "October", "November", "December",
-    )
-
-    /** Indexed by [ExcelDate.dayOfWeek], where 0 is Sunday. */
-    private val DAY_NAMES = arrayOf(
-        "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday",
-    )
 }

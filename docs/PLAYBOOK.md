@@ -37,9 +37,11 @@ Prerequisites in repo: `CLAUDE.md` (root), `docs/TECH_SPEC.md`, this file.
 > **T15.6 — DONE.** T15.5 left partial paints using default column widths, which real business spreadsheets almost never have — reflow-on-completion would have been the normal case. Chunks now carry their layout (§7), so the first paint is already correctly sized.
 
 **M3 — Fidelity**
-- [x] T16 Format engine · [ ] T17 Style render · [ ] T18 Merged cells · [ ] T19 Frozen panes · [ ] T20 Pinch zoom
+- [x] T16 Format engine · [x] T17 Style render · [ ] T18 Merged cells · [ ] T19 Frozen panes · [ ] T20 Pinch zoom
 
-> **T16 — DONE.** `ValueFormatter` in `:core:model`, with the 1900 leap-year bug reproduced deliberately (§8). Purely additive — 8 new files, nothing existing edited, `:core:parser` untouched. The engine has no consumer yet; **T17 wires it into the Canvas.**
+> **T16 — DONE.** `ValueFormatter` in `:core:model`, with the 1900 leap-year bug reproduced deliberately (§8). Purely additive — 8 new files, nothing existing edited, `:core:parser` untouched.
+>
+> **T17 — DONE.** The Canvas applies fills, bold/italic, colour and alignment, and draws formatted text through T16. Month/day names are now injected (`DateNames`), so T24 can supply Uzbek ones without touching `:core:model`. The end-to-end seam — fixture → parser → formatter → display string — is finally tested, in `:feature:viewer`. Cache and frame-time measurements in `docs/PERF.md`; **styling cost zero extra drawn cells.**
 
 **M4 — Product polish**
 - [ ] T21 ACTION_VIEW · [ ] T22 Recent files · [ ] T23 Error UI · [ ] T24 Icon+theme+UZ · 🧑 OWNER: GIFs · [ ] T25 README+metrics · 🧑 OWNER: keystore · [ ] T26 Release v1.0

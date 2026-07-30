@@ -24,6 +24,7 @@ package com.tikoncha.darcha.model
  *   [CellStyle.DEFAULT].
  * @param strings the workbook's shared strings.
  * @param date1904 the workbook's epoch flag.
+ * @param names the month and weekday names dates spell out.
  * @param maxEntries how many strings to keep before evicting the least recently
  *   used.
  */
@@ -31,6 +32,7 @@ public class FormattedValueCache(
     private val styles: StyleTable,
     private val strings: StringTable = StringTable.EMPTY,
     private val date1904: Boolean = false,
+    private val names: DateNames = DateNames.ENGLISH,
     private val maxEntries: Int = DEFAULT_MAX_ENTRIES,
 ) {
 
@@ -48,9 +50,9 @@ public class FormattedValueCache(
     /** The display text for [value] under the style at [styleId]. */
     public fun format(value: CellValue, styleId: Int): String {
         val key = keyOf(value, styleId)
-            ?: return ValueFormatter.format(value, styleOf(styleId), strings, date1904)
+            ?: return ValueFormatter.format(value, styleOf(styleId), strings, date1904, names)
         return entries.getOrPut(key) {
-            ValueFormatter.format(value, styleOf(styleId), strings, date1904)
+            ValueFormatter.format(value, styleOf(styleId), strings, date1904, names)
         }
     }
 

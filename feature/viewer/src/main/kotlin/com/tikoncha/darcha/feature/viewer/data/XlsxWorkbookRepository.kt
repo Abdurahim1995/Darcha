@@ -261,6 +261,11 @@ public class XlsxWorkbookRepository(
                                     rowHeights = LinkedHashMap(heightsSoFar),
                                 ),
                                 sharedStrings = workbook.sharedStrings,
+                                // Styles and the epoch are parsed before any
+                                // row, so a partial paint formats exactly as
+                                // the finished sheet does.
+                                styles = workbook.styles,
+                                date1904 = workbook.date1904,
                             ),
                             progress = progressFor(chunk.rowsSoFar),
                         ),
@@ -286,6 +291,8 @@ public class XlsxWorkbookRepository(
                     data = result.value.data,
                     layout = result.value.layout,
                     sharedStrings = workbook.sharedStrings,
+                    styles = workbook.styles,
+                    date1904 = workbook.date1904,
                 ),
             )
             is ParseResult.Err -> WorkbookLoad.Failure(result.kind)

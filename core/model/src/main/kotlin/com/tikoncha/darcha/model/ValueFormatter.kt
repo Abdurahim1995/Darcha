@@ -31,6 +31,9 @@ package com.tikoncha.darcha.model
  * number, because there is no such date — Excel gives up too and fills the cell
  * with `#####`, which tells the reader nothing.
  *
+ * Month and weekday names arrive as [DateNames], so nothing here depends on a
+ * locale; the UI decides what language a date reads in.
+ *
  * See [ExcelSerial] for the epochs and the 1900 leap-year bug.
  */
 public object ValueFormatter {
@@ -43,26 +46,35 @@ public object ValueFormatter {
      * @param strings the workbook's shared strings, for
      *   [CellValue.SharedText]. An index with no entry renders as empty text.
      * @param date1904 the workbook's epoch flag.
+     * @param names the month and weekday names for `mmm`/`dddd` and friends.
      */
     public fun format(
         value: CellValue,
         style: CellStyle = CellStyle.DEFAULT,
         strings: StringTable = StringTable.EMPTY,
         date1904: Boolean = false,
+        names: DateNames = DateNames.ENGLISH,
     ): String = when (value) {
-        is CellValue.Number -> number(value.value, style, date1904)
+        is CellValue.Number -> number(value.value, style, date1904, names)
         is CellValue.SharedText -> strings[value.index].orEmpty()
         is CellValue.InlineText -> value.text
         is CellValue.Bool -> if (value.value) "TRUE" else "FALSE"
         is CellValue.Error -> value.code
     }
 
-    private fun number(value: Double, style: CellStyle, date1904: Boolean): String {
+    private fun number(
+        value: Double,
+        style: CellStyle,
+        date1904: Boolean,
+        names: DateNames,
+    ): String {
         if (style.isDate && value >= 0.0) {
             val code = style.formatCode
             // A date style whose code never reached us (an id the spec leaves
             // undefined) falls through to a number rather than guessing.
-            if (code != null) DateTimeFormat.render(value, code, date1904)?.let { return it }
+            if (code != null) {
+                DateTimeFormat.render(value, code, date1904, names)?.let { return it }
+            }
         }
         return when (style.numFmtId) {
             ID_INTEGER -> NumericFormat.fixed(value, 0, grouping = false, percent = false)
