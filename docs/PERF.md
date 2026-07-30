@@ -25,7 +25,7 @@ TECH_SPEC §5 sets **< 5 MB**. Measured on the release variant:
 |---|---|
 | Release as configured today (`isMinifyEnabled = false`) | **6.27 MB** — over the target |
 | Release with R8 + resource shrinking | **0.87 MB** (0.88 MB signed) |
-| …plus DataStore and the recents list (T22) | **1.06 MB** — the new dependency cost ~190 KB shrunk |
+| …plus DataStore and the recents list (T22) | **1.06 MB** (1.07 signed) — the new dependency cost ~190 KB shrunk |
 
 Inside the shrunk APK: `classes.dex` 1.53 MB uncompressed, `resources.arsc`
 76 KB. The app carries no images, no fonts and no libraries beyond Compose and
@@ -36,15 +36,66 @@ removes.
 overshoot is only because shrinking is not switched on yet. Worth knowing early
 rather than at release: there is room to spend, not a problem to solve.
 
-Two honest caveats on that 0.87 MB:
+### The shrunk build was then run, not just measured
 
-- It was built with the AGP default ProGuard rules and **no keep rules of our
-  own**. R8 can strip something that only fails at runtime, so this is a
-  measurement of a build that *compiled and packaged*, not one proven to run.
-  The smoke test was cut short when the device disconnected mid-run.
-- The build config was reverted immediately afterwards. **T26 owns the real
-  change**, and must re-measure and verify the shrunk build actually runs before
-  relying on this number.
+A steep drop like that is exactly what a **broken** R8 build also looks like, so
+the number stayed provisional until the APK was signed with a debug key,
+installed on the A31 and exercised. All of it passed, with **no keep rules of our
+own** — only AGP's `proguard-android-optimize.txt`:
+
+| Checked | Result |
+|---|---|
+| `values-basic`, `dates`, `styles-basic`, `merged`, `frozen-both`, `multisheet`, `big-50k` | all open and render correctly |
+| Number and date formatting (T16) | `01-15-24`, `13:30`, `1/15/24 13:30` — unchanged |
+| Styles, merges, frozen panes (T17–T19) | unchanged |
+| Scrolling `big-50k` | works; frame times **better** than debug — 12 / 18 / 20 / 42 ms against 15 / 24 / 27 / 34 |
+| Sheet switching (3 sheets, parsed on demand) | works |
+| Recents: persist, survive a restart, reopen | works — **DataStore is the app's biggest R8 risk and it survived** |
+| FATAL exceptions across the whole run | **0** |
+
+**One real discovery: `Log.d` is stripped in release.** AGP's optimize config
+removes it via `-assumenosideeffects`, so the `Darcha.Viewer` and `Darcha.Grid`
+diagnostics — which every measurement in this file is read from — simply do not
+exist in a shrunk build. That is the right behaviour for a shipped app, but it
+means **all performance measurement must be done on the debug build**, and a
+release run has to be verified by what is on screen. The first attempt at this
+verification reported "no loads" for every file purely because of it.
+
+**Not covered: pinch zoom.** `sendevent` needs root and the A31 is retail, so a
+two-finger gesture cannot be injected (see "Focal-point stability" below). The
+zoom path is plain Kotlin reached from the same gesture loop as the scrolling
+that was verified, and R8's usual hazards — reflection, resource lookup,
+serialization — do not appear in it. Still unproven on a shrunk build.
+
+**T26 owns the real change.** The build config was reverted after measuring. What
+this run establishes is that it will work when switched on, and that no keep
+rules are needed today.
+
+## Recents on device (T22)
+
+| Check | Result |
+|---|---|
+| Seven documents opened by `ACTION_VIEW` | recents stayed **empty** — the honesty rule holds on hardware |
+| Two opened through the SAF picker | remembered, newest first, and reopening one did not duplicate it |
+| Force-stop and relaunch | **both survived**, and tapping one reopened the document |
+| `cacheDir` across open A → B → A, then three more | **exactly one** temp copy at every step, with a new name each time |
+| A remembered file deleted underneath the app | row reads "No longer available", is **inert** to taps, and Remove works |
+
+The `cacheDir` result is the §9.1 session lifetime holding under the access
+pattern recents creates: the copy belongs to the open document, so each load
+releases the previous one before making its own.
+
+**The availability probe had to be strengthened to get that last row right.**
+Checking `persistedUriPermissions` and then querying the provider for metadata
+was not enough: the downloads provider keeps answering `query` for a document
+whose file has been deleted, so the row still claimed to be fine. It now opens
+the file descriptor and closes it — the only question the row is really making is
+"can this be read", and that is the way to ask it.
+
+What could **not** be triggered from adb is a genuine permission revocation:
+there is no command to drop a single persisted URI grant, and the provider here
+is DocumentsUI, which cannot be uninstalled. Deleting the file exercises the same
+branch and the same rendering; the grant-held half is covered by unit tests.
 
 ## Time to first cell
 

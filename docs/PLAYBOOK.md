@@ -52,11 +52,11 @@ Prerequisites in repo: `CLAUDE.md` (root), `docs/TECH_SPEC.md`, this file.
 > **M3 exit criteria — met.** The grid now renders what the file actually says: formatted values, cell styles, merged ranges, frozen panes, and zoom.
 
 **M4 — Product polish**
-- [x] T21 ACTION_VIEW · [~] T22 Recent files · [ ] T23 Error UI · [ ] T24 Icon+theme+UZ · 🧑 OWNER: GIFs · [ ] T25 README+metrics · 🧑 OWNER: keystore · [ ] T26 Release v1.0
+- [x] T21 ACTION_VIEW · [x] T22 Recent files · [ ] T23 Error UI · [ ] T24 Icon+theme+UZ · 🧑 OWNER: GIFs · [ ] T25 README+metrics · 🧑 OWNER: keystore · [ ] T26 Release v1.0
 
 > **T21 — DONE.** Darcha opens `.xlsx` from a file manager, cold start included. Verified on both managers the A31 has — system Files and Samsung My Files — and both reported the correct OOXML MIME, so the octet-stream/wildcard fallback never fired; neither URI contained `.xlsx` anywhere, which is exactly the pathPattern limit the manifest documents. A garbage file with an `.xlsx` name lands on the error screen from a cold start, no crash. **`ACTION_VIEW` grants are one-shot** — recorded in §9.1 and in the code, so T22 does not store URIs it can never reopen.
 >
-> **T22 — CODE COMPLETE, DEVICE VERIFICATION OUTSTANDING.** DataStore-backed recents (owner-approved dependency, ~190 KB shrunk), home screen with an empty state, and the T21 trap resolved: an entry is written **only** when a persistable grant was taken, so `ACTION_VIEW` documents are viewed but never remembered. Revoked entries show "No longer available" and stay removable. 21 new unit tests, including one that walks open A → B → A and asserts a single temp copy at each step. **Still to run on hardware: recents surviving a restart, the revoked-permission row, and the cacheDir check.** The phone was unplugged partway through this task.
+> **T22 — DONE.** DataStore-backed recents (owner-approved, ~190 KB shrunk), home screen with an empty state, and the T21 trap resolved: an entry is written **only** when a persistable grant was taken. Verified on the A31 — seven `ACTION_VIEW` opens left the list empty, picker opens were remembered and survived a restart, a deleted file's row reads "No longer available" and is inert but removable, and `cacheDir` held exactly one temp copy across A → B → A. The availability probe had to be strengthened to open the file rather than query it: the downloads provider keeps answering metadata for a deleted document. Numbers in `docs/PERF.md`.
 
 ---
 

@@ -2,7 +2,6 @@ package com.tikoncha.darcha
 
 import android.content.Intent
 import android.net.Uri
-import android.provider.OpenableColumns
 import android.util.Log
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -159,10 +158,14 @@ class MainActivity : ComponentActivity() {
         val uri = runCatching { Uri.parse(id) }.getOrNull() ?: return@withContext false
         val held = contentResolver.persistedUriPermissions.any { it.uri == uri && it.isReadPermission }
         if (!held) return@withContext false
-        // Cheap existence probe: a provider answers for a document it still has.
+
+        // Then actually try to open it. Querying is not enough: the downloads
+        // provider keeps answering for a document whose file has been deleted,
+        // so a metadata probe reports a row that then fails on tap. Opening the
+        // descriptor asks the only question the row is really making — can this
+        // be read — and closing it immediately costs a file handle for a moment.
         runCatching {
-            contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
-                ?.use { it.moveToFirst() } ?: false
+            contentResolver.openAssetFileDescriptor(uri, "r")?.use { true } ?: false
         }.getOrDefault(false)
     }
 
