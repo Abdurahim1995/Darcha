@@ -8,6 +8,11 @@ package com.tikoncha.darcha.feature.viewer.mvi
  * here follow the **used range** instead — the last populated row and column —
  * so scrolling stops once the last real cell reaches the top-left corner.
  *
+ * Scrolling also has a **floor**, which is zero on an ordinary sheet and the
+ * frozen extent on a frozen one (T19): the scrolling region begins at the first
+ * unfrozen column, and letting scroll fall below that would draw the frozen
+ * columns a second time inside the body.
+ *
  * Only the renderer can compute these: they depend on the display density that
  * it folds into the geometry (§9.2). It publishes them with
  * [RenderEvent.BoundsChanged] whenever the sheet or the density changes.
@@ -15,6 +20,8 @@ package com.tikoncha.darcha.feature.viewer.mvi
 public data class ScrollBounds(
     public val maxScrollX: Float,
     public val maxScrollY: Float,
+    public val minScrollX: Float = 0f,
+    public val minScrollY: Float = 0f,
 ) {
     public companion object {
         /**

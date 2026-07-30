@@ -18,20 +18,29 @@ import com.tikoncha.darcha.model.SheetLayout
  * @property rowsSoFar cumulative count of populated rows emitted so far.
  * @property layout what it takes to size these rows. Its parts have deliberately
  *   different lifetimes, because the XML delivers them at different moments:
- *   - [SheetLayout.columnWidths], [SheetLayout.defaultColWidth] and
- *     [SheetLayout.defaultRowHeight] are **complete from the very first chunk**.
- *     `<cols>` and `<sheetFormatPr>` precede `<sheetData>` in the schema, so the
- *     column axis is final before any row exists; every chunk of a sheet shares
- *     the same instance.
+ *   - [SheetLayout.columnWidths], [SheetLayout.defaultColWidth],
+ *     [SheetLayout.defaultRowHeight] and [SheetLayout.frozenPanes] are
+ *     **complete from the very first chunk**. `<sheetFormatPr>`, `<cols>` and
+ *     `<sheetViews>` all precede `<sheetData>` in the schema, so the column axis
+ *     and the frozen panes are final before any row exists; every chunk of a
+ *     sheet shares the same instance.
  *   - [SheetLayout.rowHeights] is **a delta, exactly like [rows]** — only the
  *     heights of this chunk's rows. A row's height arrives with the row itself,
  *     so a chunk can always be drawn at its true height and a later row never
  *     shifts one already on screen. Merge chunk layouts the way you merge chunk
  *     rows: `putAll`.
- *   - [SheetLayout.merges] and [SheetLayout.frozenPanes] are **always empty**:
- *     `<mergeCells>` follows `<sheetData>`, so they are known only once the part
- *     is fully read and arrive with the returned
- *     [com.tikoncha.darcha.model.Worksheet].
+ *   - [SheetLayout.merges] is **always empty**. `<mergeCells>` follows
+ *     `<sheetData>`, so it is known only once the part is fully read and arrives
+ *     with the returned [com.tikoncha.darcha.model.Worksheet].
+ *
+ *   **The asymmetry between panes and merges is deliberate — do not "unify" it.**
+ *   It is not a style choice but a consequence of where each element sits in the
+ *   file, and the two have very different costs if they arrive late. Frozen panes
+ *   *split the grid into regions*: learning about them mid-parse would re-lay the
+ *   whole sheet and move the scroll position under the reader, so they must be
+ *   known up front — and the schema obliges. A merge only repaints one range, so
+ *   its late arrival costs nothing but a title snapping wider (T18). Merges
+ *   cannot be hoisted anyway: nothing in the file reveals them before the rows.
  *
  *   One gap, by design: a *trailing* row carrying a height but no cells emits no
  *   chunk, so its height reaches only the final worksheet. Such rows are empty

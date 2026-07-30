@@ -155,15 +155,29 @@ public object ViewerReducer {
 }
 
 /**
- * Scroll by ([dx], [dy]) content pixels, clamped to `0..bounds` on each axis.
+ * Scroll by ([dx], [dy]) content pixels, clamped to [bounds] on each axis.
+ *
+ * The floor is zero on an ordinary sheet and the frozen extent on a frozen one,
+ * so the scrolling region can never slide back over its own frozen strips (T19).
  *
  * Deltas arrive already converted from screen to content pixels — the caller
  * divides by zoom, per TECH_SPEC §9.2.
  */
 internal fun Viewport.scrolledBy(dx: Float, dy: Float, bounds: ScrollBounds): Viewport = copy(
-    scrollX = (scrollX + dx).coerceIn(0f, bounds.maxScrollX.coerceAtLeast(0f)),
-    scrollY = (scrollY + dy).coerceIn(0f, bounds.maxScrollY.coerceAtLeast(0f)),
+    scrollX = clampScroll(scrollX + dx, bounds.minScrollX, bounds.maxScrollX),
+    scrollY = clampScroll(scrollY + dy, bounds.minScrollY, bounds.maxScrollY),
 )
+
+/**
+ * Clamp one axis to `min..max`, tolerating a max below the min — which happens
+ * on a sheet whose used range is entirely inside the frozen strips. The floor
+ * wins there, because drawing the frozen columns twice is worse than not being
+ * able to scroll a sheet that has nothing to scroll to.
+ */
+private fun clampScroll(value: Float, min: Float, max: Float): Float {
+    val floor = min.coerceAtLeast(0f)
+    return value.coerceAtLeast(floor).coerceAtMost(max.coerceAtLeast(floor))
+}
 
 /** Multiply the zoom by [scale], clamped to the allowed range. */
 internal fun Viewport.zoomedBy(scale: Float): Viewport = copy(

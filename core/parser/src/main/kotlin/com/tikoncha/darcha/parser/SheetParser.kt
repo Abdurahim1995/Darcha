@@ -75,27 +75,30 @@ internal object SheetParser {
         var defaultColWidth = SheetLayout.DEFAULT_COL_WIDTH
         var defaultRowHeight = SheetLayout.DEFAULT_ROW_HEIGHT
 
-        // The column axis of the chunk layout, snapshotted when the first chunk
-        // goes out. <cols> and <sheetFormatPr> both precede <sheetData>, so by
-        // then it is final and one immutable instance can serve every chunk.
-        var chunkColumns: SheetLayout? = null
+        // The part of the layout that is already final when the first chunk goes
+        // out, snapshotted once and shared by every chunk of the sheet.
+        // <sheetFormatPr>, <cols> and <sheetViews> all precede <sheetData>, so
+        // by the time a row exists the column sizes and the frozen panes cannot
+        // change any more.
+        var chunkFixed: SheetLayout? = null
 
         fun emitChunk() {
-            val columns = chunkColumns ?: SheetLayout(
+            val fixed = chunkFixed ?: SheetLayout(
                 columnWidths = HashMap(columnWidths),
                 rowHeights = emptyMap(),
                 defaultColWidth = defaultColWidth,
                 defaultRowHeight = defaultRowHeight,
-                // Both follow <sheetData>; a chunk never claims to know them.
+                // <mergeCells> is the one layout part that follows <sheetData>,
+                // so it is the one a chunk cannot know (see RowsChunk.layout).
                 merges = emptyList(),
-                frozenPanes = FrozenPanes.NONE,
-            ).also { chunkColumns = it }
+                frozenPanes = frozenPanes,
+            ).also { chunkFixed = it }
 
             onChunk(
                 RowsChunk(
                     rows = LinkedHashMap(pending),
                     rowsSoFar = rows.size,
-                    layout = columns.copy(rowHeights = LinkedHashMap(pendingHeights)),
+                    layout = fixed.copy(rowHeights = LinkedHashMap(pendingHeights)),
                 ),
             )
             pending.clear()

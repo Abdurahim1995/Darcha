@@ -99,9 +99,12 @@ What a chunk knows follows directly from the order of the XML:
 |---|---|---|
 | Column widths, `defaultColWidth`, `defaultRowHeight` | **Complete from the first chunk** | `<cols>` and `<sheetFormatPr>` precede `<sheetData>`, so the column axis is final before any row exists. One instance is shared by every chunk of a sheet. |
 | Row heights | **A delta, like the rows themselves** | A row's `ht` arrives with the row, so a chunk is always drawable at its true height. Consumers merge chunk layouts exactly as they merge chunk rows (`putAll`). |
-| Merges, frozen panes | **Never** | `<mergeCells>` follows `<sheetData>`; they arrive with the finished `Worksheet`. Neither affects where a row sits, so nothing moves when they land. |
+| Frozen panes | **Complete from the first chunk** | `<sheetViews>` precedes `<sheetData>` as well — verified on six fixtures including two real Excel files. They *have* to be early: panes split the grid into four scrolling regions, so learning them mid-parse would re-lay the sheet and move the scroll position under the reader (T19). |
+| Merges | **Never** | `<mergeCells>` follows `<sheetData>`, so it arrives with the finished `Worksheet`. Nothing in the file reveals it sooner. |
 
-**What that looks like on screen (T18).** A merged title is drawn as an ordinary cell until the parse finishes, then becomes a span: its text stops being clipped to the first column and its fill widens. Nothing else changes — verified on a 50k-row file with 501 merges, where every pixel below the merged row is byte-identical before and after the merges arrive. This is the intended trade: merges are cosmetic, and waiting for them would cost the progressive paint that T15.5 exists for. See `docs/PERF.md`.
+**The asymmetry between panes and merges is deliberate.** It follows from where each element sits in the file, and the two have very different costs when they arrive late. Frozen panes change the *layout*; a merge only repaints one range. Do not "unify" them.
+
+**What a late merge looks like on screen (T18).** A merged title is drawn as an ordinary cell until the parse finishes, then becomes a span: its text stops being clipped to the first column and its fill widens. Nothing else changes — verified on a 50k-row file with 501 merges, where every pixel below the merged row is byte-identical before and after the merges arrive. Merges are cosmetic, and waiting for them would cost the progressive paint that T15.5 exists for. See `docs/PERF.md`.
 
 **Row heights streaming is not a gap to fix.** Later rows only shift rows *below* them, which have not been drawn yet — a row is never moved after it is on screen. Only the column axis had to be known up front, and it is.
 
@@ -139,7 +142,13 @@ What a chunk knows follows directly from the order of the XML:
 - **Viewport culling:** from `(scrollX, scrollY, zoom)`, the visible row/column range is computed via prefix-sum offset arrays + binary search. Only visible cells are drawn.
 - **Text:** `TextMeasurer`, with a cache keyed by `(text, styleId, zoom bucket)` — measuring is expensive.
 - **Gestures:** drag + fling (velocity tracker), pinch zoom (focal-point aware), tap → cell hit-test. All gestures dispatch MVI intents; the Canvas only reads State.
-- **Frozen panes:** four clipped regions with translated origins.
+- **Frozen panes:** four clipped regions — corner, frozen rows, frozen columns, body — each drawn by the ordinary unfrozen code with its frozen axes' scroll zeroed and its origin pushed past the frozen strips (T19).
+
+### Frozen panes, and why there are no seams (T19)
+
+Every boundary is derived from **one number per axis**: the frozen extent, `spanWidthOf(0, frozenCols - 1)`. The corner's right edge, the top strip's origin, the body's left clip and the separator line are all that same `Float`, so they cannot disagree at any zoom — there is no rounding step between them to disagree in. The regions are half-open and adjacent, so they tile the grid area exactly.
+
+Scrolling gains a **floor**: the scrolling region starts at the first unfrozen column, and letting scroll fall below that would draw the frozen columns a second time inside the body. The floor is clamped in two places on purpose — in the reducer via `ScrollBounds`, and again inside the region maths, because the renderer publishes the bounds *after* the first composition and the first frame would otherwise be drawn unclamped.
 - **Merged cells:** drawn once at the anchor cell spanning the merged bounds; covered cells are skipped.
 
 ## 9.1 Document session lifecycle

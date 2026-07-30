@@ -29,7 +29,9 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.style.TextAlign
 import com.tikoncha.darcha.feature.viewer.geometry.GridGeometry
 import com.tikoncha.darcha.feature.viewer.geometry.MergeIndex
-import com.tikoncha.darcha.feature.viewer.geometry.VisibleRange
+import com.tikoncha.darcha.feature.viewer.geometry.Pane
+import com.tikoncha.darcha.feature.viewer.geometry.PaneRegion
+import com.tikoncha.darcha.feature.viewer.geometry.PaneRegions
 import com.tikoncha.darcha.feature.viewer.data.SheetSnapshot
 import com.tikoncha.darcha.feature.viewer.mvi.ScrollBounds
 import com.tikoncha.darcha.feature.viewer.mvi.Viewport
@@ -96,6 +98,12 @@ public fun GridCanvas(
     // chunk lands.
     val merges = remember(layout.merges) { MergeIndex.of(layout.merges) }
 
+    // Frozen panes, unlike merges, are known from the first chunk (T19), so the
+    // grid never re-splits mid-parse.
+    val panes = remember(geometry, layout.frozenPanes) {
+        PaneRegions(geometry, layout.frozenPanes)
+    }
+
     // What a merged span paints over the gridlines it hides, when its anchor
     // carries no fill of its own.
     val surface = MaterialTheme.colorScheme.surface
@@ -113,11 +121,14 @@ public fun GridCanvas(
     // How far this sheet can scroll. Computed once per sheet — the full grid is
     // 16k x 1M, so the *used* range is what makes scrolling feel finite.
     val used = remember(sheet.data) { sheet.data.usedBounds() }
-    LaunchedEffect(geometry, used) {
+    LaunchedEffect(geometry, used, panes) {
         onBoundsChanged(
             ScrollBounds(
                 maxScrollX = geometry.columnOffset(used.lastColumn),
                 maxScrollY = geometry.rowOffset(used.lastRow),
+                // The scrolling region starts past the frozen strips.
+                minScrollX = panes.minScrollX,
+                minScrollY = panes.minScrollY,
             ),
         )
     }
@@ -147,43 +158,62 @@ public fun GridCanvas(
         // Read inside the draw block: a viewport change then invalidates only the
         // draw phase, never recomposing the surrounding chrome.
         val current = viewport()
-        val bodyWidth = (size.width - rowHeaderWidth).coerceAtLeast(0f)
-        val bodyHeight = (size.height - columnHeaderHeight).coerceAtLeast(0f)
-        val range = geometry.visibleRange(current, bodyWidth, bodyHeight)
-
-        drawBody(
-            range = range,
-            geometry = geometry,
+        val regions = panes.regions(
             viewport = current,
-            sheetData = sheet.data,
-            styles = sheet.styles,
-            formatted = formatted,
-            merges = merges,
-            surface = surface,
             originX = rowHeaderWidth,
             originY = columnHeaderHeight,
-            textMeasurer = textMeasurer,
-            cache = textCache,
+            width = size.width,
+            height = size.height,
         )
+
+        for (region in regions) {
+            if (!region.isVisible) continue
+            drawRegion(
+                region = region,
+                geometry = geometry,
+                sheetData = sheet.data,
+                styles = sheet.styles,
+                formatted = formatted,
+                merges = merges,
+                surface = surface,
+                textMeasurer = textMeasurer,
+                cache = textCache,
+            )
+        }
+
         drawHeaders(
-            range = range,
+            regions = regions,
             geometry = geometry,
-            viewport = current,
             rowHeaderWidth = rowHeaderWidth,
             columnHeaderHeight = columnHeaderHeight,
             textMeasurer = textMeasurer,
             cache = textCache,
         )
 
-        val drawn = range.cellCount
+        // The freeze separators, drawn once and last. Every region that meets a
+        // split was positioned from the same Float this line uses, so the line
+        // lands exactly on the seam instead of near it.
+        drawFreezeSeparators(
+            panes = panes,
+            viewport = current,
+            originX = rowHeaderWidth,
+            originY = columnHeaderHeight,
+        )
+
+        // Every region's cells, not just the body's — freezing splits the same
+        // window into pieces, so the total is what proves the culling.
+        var drawn = 0
+        for (region in regions) if (region.isVisible) drawn += region.cellCount
         if (drawn != lastLoggedCellCount) {
             lastLoggedCellCount = drawn
+            val body = regions.first()
             // Proof of culling: this stays small and steady however far the
             // viewport travels into a large sheet.
             Log.d(
                 LOG_TAG,
-                "visible ${range.rowCount}x${range.columnCount} = $drawn cells " +
-                    "(rows ${range.firstRow}..${range.lastRow}, cols ${range.firstColumn}..${range.lastColumn}) " +
+                "visible $drawn cells in ${regions.count { it.isVisible }} pane(s); " +
+                    "body rows ${body.firstRow}..${body.lastRow}, " +
+                    "cols ${body.firstColumn}..${body.lastColumn}; " +
                     "textCache ${textCache.size} entries, " +
                     "hit rate ${(textCache.hitRate * 100f).roundToInt()}%",
             )
@@ -193,37 +223,53 @@ public fun GridCanvas(
 }
 
 /**
- * Fills, gridlines and values for the visible block.
+ * Fills, gridlines and values for one frozen region (TECH_SPEC §9).
+ *
+ * The region already carries its clip, its origin and a viewport with the frozen
+ * axes zeroed, so this is the ordinary unfrozen draw — it never asks which pane
+ * it is in. An unfrozen sheet is simply the case where the only region is the
+ * body, covering everything.
  *
  * Order matters. Cell fills go under the gridlines the way they do in Excel;
  * then merged spans paint over both, because a merge has to hide the gridlines
  * running through it; then text, so nothing paints over a value.
  */
-private fun DrawScope.drawBody(
-    range: VisibleRange,
+private fun DrawScope.drawRegion(
+    region: PaneRegion,
     geometry: GridGeometry,
-    viewport: Viewport,
     sheetData: SheetData,
     styles: StyleTable,
     formatted: FormattedValueCache,
     merges: MergeIndex,
     surface: Color,
-    originX: Float,
-    originY: Float,
     textMeasurer: TextMeasurer,
     cache: CellTextCache<TextLayoutResult>,
 ) {
-    clipRect(left = originX, top = originY, right = size.width, bottom = size.height) {
+    val viewport = region.viewport
+    val originX = region.originX
+    val originY = region.originY
+
+    clipRect(left = region.left, top = region.top, right = region.right, bottom = region.bottom) {
+        // A frozen strip has to be opaque: the body region is drawn first and
+        // scrolls underneath it.
+        if (region.pane != Pane.BODY) {
+            drawRect(
+                color = surface,
+                topLeft = Offset(region.left, region.top),
+                size = Size(region.right - region.left, region.bottom - region.top),
+            )
+        }
+
         // Fills first, so gridlines stay visible on top of a filled cell. Covered
         // cells are skipped — their span is painted with the anchor's fill below.
-        for (row in range.firstRow..range.lastRow) {
+        for (row in region.firstRow..region.lastRow) {
             val cells = sheetData.row(row) ?: continue
             val top = originY + geometry.screenYOf(row, viewport)
             val height = geometry.screenHeightOf(row, viewport)
             for (i in cells.columns.indices) {
                 val column = cells.columns[i]
-                if (column < range.firstColumn) continue
-                if (column > range.lastColumn) break
+                if (column < region.firstColumn) continue
+                if (column > region.lastColumn) break
                 if (merges.indexOf(row, column) != MergeIndex.NONE) continue
                 val fill = styles[cells.styleIds[i]]?.fillColor ?: continue
                 drawRect(
@@ -234,17 +280,17 @@ private fun DrawScope.drawBody(
             }
         }
 
-        // Vertical gridlines, one per visible column boundary.
-        for (column in range.firstColumn..range.lastColumn + 1) {
+        // Gridlines, one per visible boundary, drawn only inside this region.
+        for (column in region.firstColumn..region.lastColumn + 1) {
             val x = originX + geometry.screenXOf(column, viewport)
-            if (x in originX..size.width) {
-                drawLine(GRID_LINE, Offset(x, originY), Offset(x, size.height), GRID_STROKE)
+            if (x in region.left..region.right) {
+                drawLine(GRID_LINE, Offset(x, region.top), Offset(x, region.bottom), GRID_STROKE)
             }
         }
-        for (row in range.firstRow..range.lastRow + 1) {
+        for (row in region.firstRow..region.lastRow + 1) {
             val y = originY + geometry.screenYOf(row, viewport)
-            if (y in originY..size.height) {
-                drawLine(GRID_LINE, Offset(originX, y), Offset(size.width, y), GRID_STROKE)
+            if (y in region.top..region.bottom) {
+                drawLine(GRID_LINE, Offset(region.left, y), Offset(region.right, y), GRID_STROKE)
             }
         }
 
@@ -252,10 +298,10 @@ private fun DrawScope.drawBody(
         // it, then outlined so the merge still reads as a cell.
         if (!merges.isEmpty) {
             merges.forEachIntersecting(
-                range.firstRow,
-                range.lastRow,
-                range.firstColumn,
-                range.lastColumn,
+                region.firstRow,
+                region.lastRow,
+                region.firstColumn,
+                region.lastColumn,
             ) { index ->
                 val anchorRow = merges.startRow(index)
                 val anchorCol = merges.startCol(index)
@@ -277,14 +323,14 @@ private fun DrawScope.drawBody(
         }
 
         // Values. Rows are sparse, so absent rows cost nothing.
-        for (row in range.firstRow..range.lastRow) {
+        for (row in region.firstRow..region.lastRow) {
             val cells = sheetData.row(row) ?: continue
             val top = originY + geometry.screenYOf(row, viewport)
             val height = geometry.screenHeightOf(row, viewport)
             for (i in cells.columns.indices) {
                 val column = cells.columns[i]
-                if (column < range.firstColumn) continue
-                if (column > range.lastColumn) break // columns are sorted ascending
+                if (column < region.firstColumn) continue
+                if (column > region.lastColumn) break // columns are sorted ascending
                 val styleId = cells.styleIds[i]
                 val value = cells.values[i]
                 val text = formatted.format(value, styleId)
@@ -330,11 +376,44 @@ private fun DrawScope.drawBody(
     }
 }
 
-/** Fixed column-letter and row-number strips. */
-private fun DrawScope.drawHeaders(
-    range: VisibleRange,
-    geometry: GridGeometry,
+/**
+ * The two lines marking where the sheet is frozen.
+ *
+ * Drawn once, after every region, and derived from the same frozen extent the
+ * regions were positioned from — so the seam is covered by a line that is
+ * exactly on it, at any zoom, rather than one that has been rounded to a
+ * neighbouring pixel.
+ */
+private fun DrawScope.drawFreezeSeparators(
+    panes: PaneRegions,
     viewport: Viewport,
+    originX: Float,
+    originY: Float,
+) {
+    if (!panes.isFrozen) return
+    val splitX = (originX + panes.frozenWidth(viewport)).coerceIn(originX, size.width)
+    val splitY = (originY + panes.frozenHeight(viewport)).coerceIn(originY, size.height)
+
+    if (panes.minScrollX > 0f && splitX < size.width) {
+        drawLine(FREEZE_LINE, Offset(splitX, 0f), Offset(splitX, size.height), FREEZE_STROKE)
+    }
+    if (panes.minScrollY > 0f && splitY < size.height) {
+        drawLine(FREEZE_LINE, Offset(0f, splitY), Offset(size.width, splitY), FREEZE_STROKE)
+    }
+}
+
+/**
+ * The fixed column-letter and row-number strips.
+ *
+ * They have to be split the same way the grid is (TECH_SPEC §9): if column A is
+ * frozen, its letter must stay put while the letters to its right scroll past.
+ * Each strip therefore reuses the regions rather than deriving its own split —
+ * the letter over a column is drawn from that column's own region, so a header
+ * can never disagree with the cells beneath it.
+ */
+private fun DrawScope.drawHeaders(
+    regions: List<PaneRegion>,
+    geometry: GridGeometry,
     rowHeaderWidth: Float,
     columnHeaderHeight: Float,
     textMeasurer: TextMeasurer,
@@ -343,39 +422,63 @@ private fun DrawScope.drawHeaders(
     drawRect(HEADER_FILL, Offset.Zero, Size(size.width, columnHeaderHeight))
     drawRect(HEADER_FILL, Offset.Zero, Size(rowHeaderWidth, size.height))
 
-    clipRect(left = rowHeaderWidth, top = 0f, right = size.width, bottom = columnHeaderHeight) {
-        for (column in range.firstColumn..range.lastColumn) {
-            drawCellText(
-                text = columnLabel(column),
-                styleId = CellTextCache.HEADER_STYLE_ID,
-                align = TextAlign.Center,
-                left = rowHeaderWidth + geometry.screenXOf(column, viewport),
-                top = 0f,
-                width = geometry.screenWidthOf(column, viewport),
-                height = columnHeaderHeight,
-                zoom = viewport.zoom,
-                textMeasurer = textMeasurer,
-                cache = cache,
-                color = HEADER_TEXT,
-            )
+    // Column letters: one pass per region that owns columns, clipped to that
+    // region's horizontal span so a scrolling letter cannot slide over a frozen
+    // one. CORNER and LEFT share the frozen columns, TOP and BODY the scrolling
+    // ones, so one of each pair is enough.
+    for (region in regions) {
+        if (!region.isVisible) continue
+        if (region.pane == Pane.CORNER || region.pane == Pane.TOP) continue
+        clipRect(
+            left = region.left,
+            top = 0f,
+            right = region.right,
+            bottom = columnHeaderHeight,
+        ) {
+            for (column in region.firstColumn..region.lastColumn) {
+                drawCellText(
+                    text = columnLabel(column),
+                    styleId = CellTextCache.HEADER_STYLE_ID,
+                    align = TextAlign.Center,
+                    left = region.originX + geometry.screenXOf(column, region.viewport),
+                    top = 0f,
+                    width = geometry.screenWidthOf(column, region.viewport),
+                    height = columnHeaderHeight,
+                    zoom = region.viewport.zoom,
+                    textMeasurer = textMeasurer,
+                    cache = cache,
+                    color = HEADER_TEXT,
+                )
+            }
         }
     }
 
-    clipRect(left = 0f, top = columnHeaderHeight, right = rowHeaderWidth, bottom = size.height) {
-        for (row in range.firstRow..range.lastRow) {
-            drawCellText(
-                text = (row + 1).toString(),
-                styleId = CellTextCache.HEADER_STYLE_ID,
-                align = TextAlign.Center,
-                left = 0f,
-                top = columnHeaderHeight + geometry.screenYOf(row, viewport),
-                width = rowHeaderWidth,
-                height = geometry.screenHeightOf(row, viewport),
-                zoom = viewport.zoom,
-                textMeasurer = textMeasurer,
-                cache = cache,
-                color = HEADER_TEXT,
-            )
+    // Row numbers: the mirror image — CORNER and TOP share the frozen rows,
+    // LEFT and BODY the scrolling ones.
+    for (region in regions) {
+        if (!region.isVisible) continue
+        if (region.pane == Pane.CORNER || region.pane == Pane.LEFT) continue
+        clipRect(
+            left = 0f,
+            top = region.top,
+            right = rowHeaderWidth,
+            bottom = region.bottom,
+        ) {
+            for (row in region.firstRow..region.lastRow) {
+                drawCellText(
+                    text = (row + 1).toString(),
+                    styleId = CellTextCache.HEADER_STYLE_ID,
+                    align = TextAlign.Center,
+                    left = 0f,
+                    top = region.originY + geometry.screenYOf(row, region.viewport),
+                    width = rowHeaderWidth,
+                    height = geometry.screenHeightOf(row, region.viewport),
+                    zoom = region.viewport.zoom,
+                    textMeasurer = textMeasurer,
+                    cache = cache,
+                    color = HEADER_TEXT,
+                )
+            }
         }
     }
 
@@ -446,6 +549,10 @@ private val CELL_FONT_SIZE = 11.sp
 private const val CELL_PADDING = 4f
 private const val GRID_STROKE = 1f
 private val GRID_LINE = Color(0xFFD0D0D0)
+
+/** The freeze split, darker than a gridline so the reader can see the sheet is frozen. */
+private val FREEZE_LINE = Color(0xFF9098A8)
+private const val FREEZE_STROKE = 2f
 private val CELL_TEXT = Color(0xFF202020)
 private val HEADER_FILL = Color(0xFFF2F2F2)
 private val HEADER_TEXT = Color(0xFF606060)

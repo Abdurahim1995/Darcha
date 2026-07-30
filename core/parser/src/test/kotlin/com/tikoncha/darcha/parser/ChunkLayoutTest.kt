@@ -104,8 +104,12 @@ class ChunkLayoutTest {
         assertEquals(worksheet.layout.defaultRowHeight, chunks.last().layout.defaultRowHeight, 0.0)
     }
 
-    // --- what a chunk deliberately does not claim to know ---
+    // --- panes travel, merges do not: the asymmetry, locked ---
 
+    /**
+     * `<mergeCells>` genuinely follows `<sheetData>`, so a chunk cannot know the
+     * merges however much a renderer might want them. This guarantee stays.
+     */
     @Test
     fun chunkLayout_neverClaimsMerges() {
         val chunks = ArrayList<RowsChunk>()
@@ -117,13 +121,34 @@ class ChunkLayoutTest {
         assertTrue(worksheet.layout.merges.isNotEmpty())
     }
 
+    /**
+     * Frozen panes, unlike merges, ride with the very first chunk (T19).
+     *
+     * `<sheetViews>` precedes `<sheetData>`, so they are knowable early — and
+     * they have to be. Panes split the grid into four scrolling regions; a
+     * renderer that learned about them halfway through a parse would re-lay the
+     * sheet and move the scroll position under the reader. A late merge only
+     * repaints one range (T18), which is why the two are treated differently.
+     */
     @Test
-    fun chunkLayout_neverClaimsFrozenPanes() {
+    fun chunkLayout_carriesFrozenPanesFromTheFirstChunk() {
         val chunks = ArrayList<RowsChunk>()
         val worksheet = parseFixture("frozen.xlsx", chunkSize = 1) { chunks.add(it) }
+        val expected = FrozenPanes(frozenCols = 1, frozenRows = 1)
 
+        assertTrue("expected several chunks", chunks.size > 1)
+        assertEquals("the first paint already knows", expected, chunks.first().layout.frozenPanes)
+        for (chunk in chunks) assertEquals(expected, chunk.layout.frozenPanes)
+        // And the finished worksheet agrees, so nothing changes at completion.
+        assertEquals(expected, worksheet.layout.frozenPanes)
+    }
+
+    /** A sheet with a split (not frozen) pane still reports no freezing. */
+    @Test
+    fun chunkLayout_ofAnUnfrozenSheet_hasNoPanes() {
+        val chunks = ArrayList<RowsChunk>()
+        parseFixture("merged.xlsx", chunkSize = 1) { chunks.add(it) }
         for (chunk in chunks) assertEquals(FrozenPanes.NONE, chunk.layout.frozenPanes)
-        assertEquals(FrozenPanes(frozenCols = 1, frozenRows = 1), worksheet.layout.frozenPanes)
     }
 
     @Test
