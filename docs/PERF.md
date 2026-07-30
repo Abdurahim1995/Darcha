@@ -17,6 +17,34 @@ comparable only against the same hardware.
 A mid-range phone from 2020 — deliberately not a flagship, since TECH_SPEC §5
 targets "a mid-range device".
 
+## APK size
+
+TECH_SPEC §5 sets **< 5 MB**. Measured on the release variant:
+
+| Build | APK |
+|---|---|
+| Release as configured today (`isMinifyEnabled = false`) | **6.27 MB** — over the target |
+| Release with R8 + resource shrinking | **0.87 MB** (0.88 MB signed) |
+
+Inside the shrunk APK: `classes.dex` 1.53 MB uncompressed, `resources.arsc`
+76 KB. The app carries no images, no fonts and no libraries beyond Compose and
+lifecycle, so almost all of the 6.27 MB was unreferenced framework code that R8
+removes.
+
+**The §5 target is comfortably reachable — 5.7× of headroom** — and the current
+overshoot is only because shrinking is not switched on yet. Worth knowing early
+rather than at release: there is room to spend, not a problem to solve.
+
+Two honest caveats on that 0.87 MB:
+
+- It was built with the AGP default ProGuard rules and **no keep rules of our
+  own**. R8 can strip something that only fails at runtime, so this is a
+  measurement of a build that *compiled and packaged*, not one proven to run.
+  The smoke test was cut short when the device disconnected mid-run.
+- The build config was reverted immediately afterwards. **T26 owns the real
+  change**, and must re-measure and verify the shrunk build actually runs before
+  relying on this number.
+
 ## Time to first cell
 
 Measured in the ViewModel from the `OpenFile` intent to the `Ready` state — the
