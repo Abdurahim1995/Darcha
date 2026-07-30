@@ -1,6 +1,7 @@
 package com.tikoncha.darcha.feature.viewer.data
 
 import com.tikoncha.darcha.model.ErrorKind
+import com.tikoncha.darcha.model.FrozenPanes
 import com.tikoncha.darcha.model.SheetLayout
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -386,27 +387,107 @@ class XlsxWorkbookRepositoryTest {
         repository.closeDocument()
     }
 
+    // --- partial layout (T15.6) ---
+
+    /**
+     * The reason T15.6 exists: a partial paint must use the sheet's real column
+     * widths. Almost every real business spreadsheet sets them, so drawing the
+     * first rows at the default width and re-laying them out when the parse ends
+     * would be the normal case, not an edge case.
+     */
+    @Test
+    fun aPartialPaint_usesTheRealColumnWidths_notTheDefaults() = runBlocking {
+        val partials = mutableListOf<SheetProgress>()
+        val load = repository().load(BytesSource(streamingWorkbookBytes())) { partials.add(it) }
+
+        val first = partials.first().sheet.layout
+        assertEquals(mapOf(0 to 30.0, 2 to 4.5), first.columnWidths)
+        assertEquals(12.0, first.defaultColWidth, 0.0)
+        assertEquals(18.0, first.defaultRowHeight, 0.0)
+
+        // Nothing the user is already looking at moves when the parse finishes.
+        val complete = (load as WorkbookLoad.Success).sheet.layout
+        assertEquals(complete.columnWidths, first.columnWidths)
+        assertEquals(complete.defaultColWidth, first.defaultColWidth, 0.0)
+        assertEquals(complete.defaultRowHeight, first.defaultRowHeight, 0.0)
+    }
+
+    @Test
+    fun rowHeights_reachAPartialWithTheirOwnRows() = runBlocking {
+        val partials = mutableListOf<SheetProgress>()
+        val load = repository().load(BytesSource(streamingWorkbookBytes())) { partials.add(it) }
+
+        // The first emission covers the first chunk (rows 1..200 of the file),
+        // so it knows the tall row inside it and not the one far below.
+        val first = partials.first().sheet
+        assertTrue("the partial must not already be the whole sheet", first.data.rows.size < 260)
+        assertEquals(mapOf(2 to 40.0), first.layout.rowHeights)
+
+        // A later row never shifts an earlier one, so learning about row 250
+        // moves nothing that was already drawn.
+        val complete = (load as WorkbookLoad.Success).sheet.layout
+        assertEquals(mapOf(2 to 40.0, 249 to 28.0), complete.rowHeights)
+    }
+
+    /**
+     * Merges and frozen panes follow `<sheetData>`, so a partial cannot know
+     * them — and must not pretend to. Neither affects where a row sits, so they
+     * can land with the final result without moving anything.
+     */
+    @Test
+    fun aPartialPaint_claimsNoMergesOrFrozenPanes() = runBlocking {
+        val partials = mutableListOf<SheetProgress>()
+        repository().load(BytesSource(streamingWorkbookBytes())) { partials.add(it) }
+
+        val first = partials.first().sheet.layout
+        assertTrue(first.merges.isEmpty())
+        assertEquals(FrozenPanes.NONE, first.frozenPanes)
+    }
+
     // --- helpers ---
+
+    /**
+     * A workbook big enough to be emitted in more than one chunk, with custom
+     * column widths declared before `<sheetData>` and two custom row heights —
+     * one inside the first chunk, one well past it.
+     */
+    private fun streamingWorkbookBytes(): ByteArray = workbookBytes(
+        rows = 260, // > the parser's 200-row chunk size
+        layoutXml = """<sheetFormatPr defaultColWidth="12" defaultRowHeight="18"/>""" +
+            """<cols><col min="1" max="1" width="30" customWidth="1"/>""" +
+            """<col min="3" max="3" width="4.5" customWidth="1"/></cols>""",
+        // 1-based in the file; rows 3 and 250 become indices 2 and 249.
+        rowHeights = mapOf(3 to 40.0, 250 to 28.0),
+    )
 
     /**
      * Build a minimal valid .xlsx in memory.
      *
      * @param rows rows in the first sheet, when [sheetRowCounts] is not given.
      * @param sheetRowCounts row count per sheet, one entry per sheet.
+     * @param layoutXml markup placed before `<sheetData>` — `<sheetFormatPr>` and
+     *   `<cols>`, which the schema requires there.
+     * @param rowHeights custom `ht` per **1-based** row number.
      *
      * Written by hand rather than reusing a fixture: the golden corpus lives in
      * `:core:parser` and exists to pin parser behaviour, whereas this only needs
      * *some* readable workbook to exercise repository wiring.
      */
-    private fun workbookBytes(rows: Int, sheetRowCounts: List<Int> = listOf(rows)): ByteArray {
+    private fun workbookBytes(
+        rows: Int,
+        sheetRowCounts: List<Int> = listOf(rows),
+        layoutXml: String = "",
+        rowHeights: Map<Int, Double> = emptyMap(),
+    ): ByteArray {
         fun sheetXml(rowCount: Int): String {
             val sheetRows = (1..rowCount).joinToString("") { r ->
-                """<row r="$r"><c r="A$r"><v>$r</v></c><c r="B$r"><v>${r * 2}</v></c>""" +
+                val ht = rowHeights[r]?.let { """ ht="$it" customHeight="1"""" }.orEmpty()
+                """<row r="$r"$ht><c r="A$r"><v>$r</v></c><c r="B$r"><v>${r * 2}</v></c>""" +
                     """<c r="C$r"><v>${r * 3}</v></c></row>"""
             }
             return """<?xml version="1.0" encoding="UTF-8"?>
                 |<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-                |<sheetData>$sheetRows</sheetData></worksheet>""".trimMargin()
+                |$layoutXml<sheetData>$sheetRows</sheetData></worksheet>""".trimMargin()
         }
 
         val sheetOverrides = sheetRowCounts.indices.joinToString("") { i ->

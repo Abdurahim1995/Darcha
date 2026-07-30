@@ -221,6 +221,11 @@ public class XlsxWorkbookRepository(
         val job = coroutineContext
         // Rows accumulated so far, so the grid can draw before the parse ends.
         val soFar = LinkedHashMap<Int, com.tikoncha.darcha.model.Row>()
+        // Layout accumulated the same way (T15.6). Chunk layouts are merged
+        // exactly like chunk rows: the column axis is complete from the first
+        // chunk, row heights arrive with their own rows.
+        val heightsSoFar = LinkedHashMap<Int, Double>()
+        var layoutSoFar = SheetLayout.EMPTY
         var lastEmitAt = 0L
         val result = try {
             workbook.readSheet(index) { chunk ->
@@ -230,6 +235,8 @@ public class XlsxWorkbookRepository(
                 // parse and rejecting a model we already paid the memory for.
                 if (cells > maxCells) throw CellCapExceeded(cells)
                 soFar.putAll(chunk.rows)
+                heightsSoFar.putAll(chunk.layout.rowHeights)
+                layoutSoFar = chunk.layout
 
                 // The first chunk paints immediately; after that emissions are
                 // throttled, because each one copies the accumulated rows into an
@@ -237,10 +244,10 @@ public class XlsxWorkbookRepository(
                 val now = System.currentTimeMillis()
                 if (lastEmitAt == 0L || now - lastEmitAt >= PARTIAL_INTERVAL_MILLIS) {
                     lastEmitAt = now
-                    // Layout is only complete once the whole part is read (merges
-                    // and panes follow <sheetData>), so partial paints use the
-                    // sheet defaults and the real layout lands with the final
-                    // result. See docs/PERF.md.
+                    // Merges and panes follow <sheetData>, so they are still
+                    // unknown here and land with the final result — neither
+                    // affects where a row sits, so nothing moves when they do.
+                    // Widths and heights are already right (RowsChunk.layout).
                     onPartial(
                         SheetProgress(
                             meta = DocumentMeta(
@@ -250,7 +257,9 @@ public class XlsxWorkbookRepository(
                             ),
                             sheet = SheetSnapshot(
                                 data = SheetData(LinkedHashMap(soFar)),
-                                layout = SheetLayout.EMPTY,
+                                layout = layoutSoFar.copy(
+                                    rowHeights = LinkedHashMap(heightsSoFar),
+                                ),
                                 sharedStrings = workbook.sharedStrings,
                             ),
                             progress = progressFor(chunk.rowsSoFar),

@@ -26,13 +26,17 @@ import java.util.zip.ZipFile
  * cells with a value are stored — a styled-but-empty `<c>` is dropped in v1.
  *
  * Layout: `<cols>` custom widths, `<sheetFormatPr>` defaults, `<row>` heights,
- * `<mergeCells>`, and a frozen `<pane>`.
+ * `<mergeCells>`, and a frozen `<pane>`. The parts known before `<sheetData>`
+ * ends also travel with each [RowsChunk], so progressive rendering sizes rows
+ * correctly on first paint instead of reflowing at the end (see
+ * [RowsChunk.layout]).
  */
 internal object SheetParser {
 
     /**
      * Read the worksheet at [partPath] in [zip] into a [Worksheet], invoking
      * [onChunk] with each batch of up to [chunkSize] rows as they accumulate.
+     * Each chunk carries the layout its rows are sized by ([RowsChunk.layout]).
      */
     fun parse(
         zip: ZipFile,
@@ -59,6 +63,9 @@ internal object SheetParser {
         val parser = Xml.newPullParser(input)
         val rows = LinkedHashMap<Int, Row>()
         val pending = LinkedHashMap<Int, Row>()
+        // Heights of the pending rows, so a chunk can be drawn at its true size
+        // without waiting for the parse to end (see RowsChunk.layout).
+        val pendingHeights = LinkedHashMap<Int, Double>()
 
         // Layout accumulators.
         val columnWidths = HashMap<Int, Double>()
@@ -67,6 +74,33 @@ internal object SheetParser {
         var frozenPanes = FrozenPanes.NONE
         var defaultColWidth = SheetLayout.DEFAULT_COL_WIDTH
         var defaultRowHeight = SheetLayout.DEFAULT_ROW_HEIGHT
+
+        // The column axis of the chunk layout, snapshotted when the first chunk
+        // goes out. <cols> and <sheetFormatPr> both precede <sheetData>, so by
+        // then it is final and one immutable instance can serve every chunk.
+        var chunkColumns: SheetLayout? = null
+
+        fun emitChunk() {
+            val columns = chunkColumns ?: SheetLayout(
+                columnWidths = HashMap(columnWidths),
+                rowHeights = emptyMap(),
+                defaultColWidth = defaultColWidth,
+                defaultRowHeight = defaultRowHeight,
+                // Both follow <sheetData>; a chunk never claims to know them.
+                merges = emptyList(),
+                frozenPanes = FrozenPanes.NONE,
+            ).also { chunkColumns = it }
+
+            onChunk(
+                RowsChunk(
+                    rows = LinkedHashMap(pending),
+                    rowsSoFar = rows.size,
+                    layout = columns.copy(rowHeights = LinkedHashMap(pendingHeights)),
+                ),
+            )
+            pending.clear()
+            pendingHeights.clear()
+        }
 
         // Per-row cell accumulators.
         var rowIndex = -1
@@ -102,8 +136,10 @@ internal object SheetParser {
                     "row" -> {
                         rowIndex = parser.getAttributeValue(null, "r")?.toIntOrNull()?.minus(1)
                             ?: (rowIndex + 1)
-                        parser.getAttributeValue(null, "ht")?.toDoubleOrNull()
-                            ?.let { rowHeights[rowIndex] = it }
+                        parser.getAttributeValue(null, "ht")?.toDoubleOrNull()?.let {
+                            rowHeights[rowIndex] = it
+                            pendingHeights[rowIndex] = it
+                        }
                         cols = ArrayList()
                         vals = ArrayList()
                         styleIds = ArrayList()
@@ -144,16 +180,15 @@ internal object SheetParser {
                         val built = buildRow(cols, vals, styleIds)
                         rows[rowIndex] = built
                         pending[rowIndex] = built
-                        if (pending.size >= chunkSize) {
-                            onChunk(RowsChunk(LinkedHashMap(pending), rows.size))
-                            pending.clear()
-                        }
+                        if (pending.size >= chunkSize) emitChunk()
                     }
                 }
             }
             event = parser.next()
         }
-        if (pending.isNotEmpty()) onChunk(RowsChunk(pending, rows.size))
+        // Chunks are emitted for rows, so a trailing height with no row waits for
+        // the layout below — see RowsChunk.layout.
+        if (pending.isNotEmpty()) emitChunk()
 
         val layout = SheetLayout(
             columnWidths = columnWidths,

@@ -53,14 +53,36 @@ reach the renderer as they are parsed (first chunk immediately, then throttled t
 250 ms), and the viewport survives every update — scrolling through the first
 rows while the rest streams in does not jump.
 
-> **Remaining limitation.** Partial paints use the sheet's *default* column widths
-> and row heights: `<cols>` precedes `<sheetData>` in the XML, so the parser knows
-> them early, but `RowsChunk` does not carry them and `:core:parser` was left
-> untouched here. Files with custom column widths therefore re-layout once when
-> the parse completes. Only one fixture in the corpus (`excel/dates.xlsx`, which
-> parses in milliseconds) has `<cols>` at all, so this is currently invisible —
-> but a large styled file would show it. The fix is to include the layout-so-far
-> in the chunk.
+## Layout on first paint (T15.6)
+
+T15.5 left one gap: partial paints used the sheet's *default* column widths, so a
+file with custom widths re-laid itself out when the parse completed. Almost every
+real business spreadsheet sets column widths, so that was the normal case, not an
+edge case — the corpus simply had no fixture with a `<cols>` block big enough to
+show it. Chunks now carry their layout (TECH_SPEC §7).
+
+**Verified on the device, not by eye.** A 50,000-row copy of the perf fixture with
+wildly non-default widths (`A`=42, `D`=30, `F`=26 characters, the rest 4) was
+opened, and two frames captured: one mid-parse (**24,800 rows**, progress bar up)
+and one after completion (**50,001 rows**, bar gone). Cropping the grid body out
+of both — column headers, row headers, gridlines, cells — gives two
+**byte-identical** PNGs, while the header text and the progress-bar strip differ,
+proving the frames really are the two different states.
+
+| | Wide fixture, 50k rows |
+|---|---|
+| First cells | **248 ms** cold, 57 ms warm |
+| Complete parse | 2,882 ms cold, 2,191 ms warm |
+| Grid pixels moved between first paint and completion | **0** |
+
+The renderer's own culling log agrees: `visible 37x4 = 148 cells` is logged once
+for the whole load. It is emitted only when the drawn-cell count *changes*, so a
+reflow would have produced a second line with a different column count.
+
+**Row heights streaming is not a remaining gap.** A row's `ht` arrives with the
+row, so every row is drawn at its true height from its first paint; later rows
+only ever shift rows *below* them, which are not on screen yet. Only the column
+axis had to be known up front, and `<cols>` precedes `<sheetData>` — so it is.
 
 ## Cells drawn per frame
 
@@ -106,3 +128,15 @@ adb logcat -c && adb logcat -s Darcha.Viewer Darcha.Grid
 
 Open the file in the app; the load time and the drawn-cell counts appear in the
 log.
+
+For the T15.6 layout check you also need the wide variant. It is **not committed**
+— a second 1.8 MB file would double the corpus for no assertion — so generate it,
+measure, then delete it:
+
+```bash
+python3 tools/gen_fixtures.py big
+```
+
+That writes both `big-50k-rows.xlsx` and `big-50k-wide.xlsx`. Push the wide one,
+open it, and screenshot once while the progress bar is still up and once after it
+disappears; the grid body of the two frames must be identical.

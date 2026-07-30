@@ -89,6 +89,20 @@ Gesture / UI event → Intent → ViewModel (reduce) → State → Canvas render
 4. `xl/styles.xml` → resolve `cellXfs` → font / fill / alignment / `numFmtId`. **Built-in number formats (ids 0–163) are not stored in the file** — the spec assumes them; we ship a hardcoded table.
 5. `xl/worksheets/sheetN.xml` → streamed row by row into the sparse model. **Progressive loading:** the first ~200 rows are emitted to the UI immediately; the rest continues on `Dispatchers.IO`.
 
+### Chunks carry their layout
+
+A chunk is not just rows — it also carries the layout those rows are **sized** by (`RowsChunk.layout`), so a progressive renderer places them correctly on first paint instead of laying the sheet out again when the parse ends. Almost every real business spreadsheet sets column widths, so drawing partial results at the default width would make reflow-on-completion the normal case, not an edge case.
+
+What a chunk knows follows directly from the order of the XML:
+
+| Layout part | In a chunk | Why |
+|---|---|---|
+| Column widths, `defaultColWidth`, `defaultRowHeight` | **Complete from the first chunk** | `<cols>` and `<sheetFormatPr>` precede `<sheetData>`, so the column axis is final before any row exists. One instance is shared by every chunk of a sheet. |
+| Row heights | **A delta, like the rows themselves** | A row's `ht` arrives with the row, so a chunk is always drawable at its true height. Consumers merge chunk layouts exactly as they merge chunk rows (`putAll`). |
+| Merges, frozen panes | **Never** | `<mergeCells>` follows `<sheetData>`; they arrive with the finished `Worksheet`. Neither affects where a row sits, so nothing moves when they land. |
+
+**Row heights streaming is not a gap to fix.** Later rows only shift rows *below* them, which have not been drawn yet — a row is never moved after it is on screen. Only the column axis had to be known up front, and it is.
+
 ### Cell types
 
 `n` number (default) · `s` shared string · `inlineStr` · `b` boolean · `e` error · `str` formula string result. For formula cells, the `<f>` element is skipped and the cached `<v>` value is used.
@@ -128,6 +142,7 @@ open, not just until the first parse returns.
 | **`closeDocument()`** | Ends the *session* — closes the workbook, deletes the copy. The repository is **not** shut down: a later `load()` reuses the same instance. |
 | **Ownership** | The repository is **process-scoped** (`DarchaApplication`), never per-Activity. |
 | **Startup sweep** | Orphaned `darcha-*.xlsx` copies from a killed process are deleted at startup. It takes the same lock as `load()`, so it can never delete a copy being written or one in use. |
+| **Partial snapshots** | While a sheet streams, the repository accumulates rows *and* layout from the chunks (§7) and emits throttled immutable `SheetSnapshot`s. Each one is already sized correctly, so the grid never re-lays itself out when the parse completes. |
 
 **Why process scope.** Session state outlives the Activity: a rotation destroys the
 Activity while the retained ViewModel keeps reading the same document. An

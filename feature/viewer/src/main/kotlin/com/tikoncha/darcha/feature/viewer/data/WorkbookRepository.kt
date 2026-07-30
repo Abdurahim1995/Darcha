@@ -35,8 +35,11 @@ public interface WorkbookSource {
  * A sheet mid-parse: the rows read so far, with the metadata already known.
  *
  * The workbook part and the shared strings are parsed before any row, so the
- * names and the string table are complete from the first emission — only the
- * rows and the layout are still filling in.
+ * names and the string table are complete from the first emission. So are the
+ * column widths, which is what keeps the grid from re-laying itself out when the
+ * parse ends (T15.6, `RowsChunk.layout`): each row is drawn at its true size
+ * from its first paint. Only the rows themselves, their heights, and the merges
+ * and frozen panes that follow `<sheetData>` are still filling in.
  *
  * @property progress fraction parsed so far, in `0f..1f`.
  */
@@ -73,9 +76,10 @@ public interface WorkbookRepository {
      * Load the document behind [source] and read its first sheet.
      *
      * [onPartial] receives the sheet **as it is being parsed** — a snapshot of
-     * the rows so far plus progress in `0f..1f` — so the grid can paint its first
-     * cells long before the last row arrives (TECH_SPEC §7). Emissions are
-     * throttled; the first chunk always fires immediately.
+     * the rows so far, sized by the layout already known for them, plus progress
+     * in `0f..1f` — so the grid can paint its first cells long before the last
+     * row arrives (TECH_SPEC §7). Emissions are throttled; the first chunk always
+     * fires immediately.
      *
      * Opening a document starts a **session** that stays open until the next
      * [load] or a [closeDocument] — later sheets are read from it with [readSheet].

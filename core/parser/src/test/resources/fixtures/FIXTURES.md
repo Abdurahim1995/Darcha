@@ -47,7 +47,7 @@ Together these two fixtures fully cover T4's read paths (present, missing, and
 through openpyxl; **OWNER will additionally open it in LibreOffice / Google
 Sheets to confirm real-app compatibility.**
 
-## The 8 synthetic fixtures
+## The 9 synthetic fixtures
 
 | File | Producer | Covers | Golden highlights |
 |---|---|---|---|
@@ -59,6 +59,7 @@ Sheets to confirm real-app compatibility.**
 | `dates.xlsx` | synthetic (openpyxl) | Builtin + custom number formats, date detection (T5, T16) | `A1` numFmt 14, serial `45306`; `A2` numFmt 21, serial `0.5625`; `A3` numFmt 22, serial `45306.5625`; `A4` custom numFmt 164 `yyyy-mm-dd`, serial `45657` |
 | `multisheet.xlsx` | synthetic (openpyxl) | Sheet order + non-ASCII names (T3) | 3 sheets, in order: `"Jadval 1"`, `"Narxlar"`, `"Ҳисобот"` (Cyrillic, UTF-8) |
 | `sparse-gaps.xlsx` | synthetic (openpyxl) | Sparsity — large gaps, no empty-cell allocation (T6) | Exactly **3** cells: `A1`="start", `C5`=42, `AA100`="end"; `<dimension>` claims `A1:AA100` (must be ignored) |
+| `column-widths.xlsx` | synthetic (openpyxl) | Custom column widths + row heights; the layout carried by each chunk (T7, T15.6) | Widths `A`=30, `C`=4.5, `D`=18 (`B` default); heights row 1=40, row 7=28; `<cols>` sits **before** `<sheetData>` |
 
 ## Detailed golden values
 
@@ -111,6 +112,30 @@ Column `AA` = index 26; row 100 = index 99.
 Note: openpyxl also *defines* an unused custom numFmt `165` (`yyyy-mm-dd
 h:mm:ss`) that no cell references — a harmless real-world artifact. Serials use
 the 1900 epoch (`date1904=false`).
+
+### `column-widths.xlsx`
+
+Ten rows × four columns. It exists because nothing else in the corpus had a
+`<cols>` block worth asserting, while almost every real business spreadsheet has
+one — so the layout path was effectively untested (T15.6).
+
+| Layout | 0-based golden value |
+|---|---|
+| `columnWidths` | `{0: 30.0, 2: 4.5, 3: 18.0}` — column `B` (index 1) is left at the default |
+| `rowHeights` | `{0: 40.0, 6: 28.0}` — file rows 1 and 7 |
+| `defaultRowHeight` | `15.0`, from `<sheetFormatPr defaultRowHeight="15">` |
+| `defaultColWidth` | `8.43` — the OOXML default. openpyxl writes `baseColWidth="8"`, which is **not** `defaultColWidth` and must not be read as it |
+| `merges` / `frozenPanes` | none |
+
+Two structural facts the chunk-layout design rests on, both true in this file:
+
+- `<cols>` and `<sheetFormatPr>` are written **before** `<sheetData>`, so the
+  column axis is final before the first row is parsed.
+- `ht` is an attribute of `<row>`, so a row's height arrives with the row.
+
+At `chunkSize = 3` the ten rows arrive as four chunks (rows `0-2`, `3-5`, `6-8`,
+`9`). Every chunk carries the full column widths; the height of row 0 rides in
+the first chunk and row 6's in the third.
 
 ## Real-producer corpus — `excel/`
 
@@ -168,7 +193,7 @@ part of the default 8-fixture run.
 
 ```bash
 pip install openpyxl        # tested with 3.1.5
-python3 tools/gen_fixtures.py          # the 8 small golden fixtures
+python3 tools/gen_fixtures.py          # the 9 small golden fixtures
 python3 tools/gen_fixtures.py big       # big-50k-rows.xlsx (large, perf only)
 ```
 

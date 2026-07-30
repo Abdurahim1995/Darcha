@@ -30,9 +30,11 @@ Prerequisites in repo: `CLAUDE.md` (root), `docs/TECH_SPEC.md`, this file.
 > **M2 exit criteria — met.** The app opens a real `.xlsx`, draws it, scrolls it with gestures and switches sheets. Measurements in `docs/PERF.md`. The first-paint gap found here was closed straight after, in T15.5.
 
 **M2.5 — Progressive first paint**
-- [x] T15.5 Progressive first paint
+- [x] T15.5 Progressive first paint · [x] T15.6 Chunks carry their layout
 
 > **T15.5 — DONE.** `big-50k-rows.xlsx` showed its first cells in 2,427 ms, violating §5. The parser already streamed in chunks (§7, T8) but the grid waited for the last row. Chunks now reach the renderer as partial snapshots: **175 ms to first cells**, complete parse unchanged. Before/after in `docs/PERF.md`.
+>
+> **T15.6 — DONE.** T15.5 left partial paints using default column widths, which real business spreadsheets almost never have — reflow-on-completion would have been the normal case. Chunks now carry their layout (§7), so the first paint is already correctly sized.
 
 **M3 — Fidelity**
 - [ ] T16 Format engine · [ ] T17 Style render · [ ] T18 Merged cells · [ ] T19 Frozen panes · [ ] T20 Pinch zoom
@@ -313,6 +315,49 @@ Acceptance: 🧑 owner's big-50k fixture scrolls smoothly on a real device (no v
 - Create docs/PERF.md: device model, measured time-to-first-cell for big-50k, subjective scroll verdict, drawn-cells-per-frame sample.
 
 Acceptance: multisheet.xlsx tab switching works; PERF.md committed. M2 done — the app is now demoable.
+```
+
+---
+
+# M2.5 — Progressive first paint
+
+## T15.5 — Progressive first paint
+
+```text
+PERF.md shows 2.4 s time-to-first-cell for big-50k-rows.xlsx (1.78 MB), violating TECH_SPEC §5.
+What was measured is time-to-complete-parse: the parser already streams in chunks (§7, T8),
+but the grid only rendered once the whole sheet was done. Fix the last mile.
+
+- Render from partial data: chunks emitted during parsing must reach the grid.
+- Keep the flow unidirectional and keep parse progress visible until the sheet completes.
+- scrollBounds must grow as rows arrive, not clamp the user to the first chunk.
+- Guard against a stale in-flight parse painting over a newer document.
+- Re-measure and update docs/PERF.md with before/after numbers.
+
+Acceptance: big-50k shows its first cells in well under 1 s on the Samsung A31; scrolling
+during an in-flight parse does not break or jump.
+```
+
+## T15.6 — Chunks carry their layout
+
+```text
+T15.5 left partial paints using the sheet's *default* column widths: <cols> precedes
+<sheetData>, so the parser knows them early, but RowsChunk did not carry them. Almost every
+real business spreadsheet sets column widths, so reflow-on-completion would be the normal
+case, not an edge case.
+
+- :core:parser unfrozen for this task only. ADDITIVE change: no existing public behaviour
+  changes, and every existing core test stays green without being edited.
+- Chunks carry the layout known so far (RowsChunk.layout). Row heights stream with their
+  rows — that is fine and deliberate: a later row never shifts an earlier one. Do not
+  "fix" it later.
+- The repository merges chunk layouts the way it merges chunk rows.
+- Close the corpus gap: a synthetic fixture with clearly non-default column widths
+  (openpyxl column_dimensions), so the layout path is covered by tests.
+- Record in TECH_SPEC §7 and §9.1 that chunks carry layout.
+
+Acceptance: golden tests on the new fixture; a partial paint of a large file with custom
+column widths does not reflow on device when the parse completes.
 ```
 
 ---

@@ -70,7 +70,10 @@ internal class CellTextCache(private val maxEntries: Int = DEFAULT_MAX_ENTRIES) 
     fun get(text: String, zoom: Float, measure: () -> TextLayoutResult): TextLayoutResult =
         entries.getOrPut(Key(text, zoomBucketOf(zoom))) { measure() }
 
-    /** Drop everything — used when the sheet or text style changes. */
+    /**
+     * Drop everything. Entries stay valid across sheets — the key is the text and
+     * the zoom — so only a change of text style invalidates them (T17).
+     */
     fun clear(): Unit = entries.clear()
 
     companion object {

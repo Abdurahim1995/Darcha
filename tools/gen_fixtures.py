@@ -308,6 +308,34 @@ def gen_sparse_gaps() -> None:
     _save(wb, "sparse-gaps.xlsx")
 
 
+def gen_column_widths() -> None:
+    """Custom column widths and row heights — the layout path (T15.6).
+
+    Almost every real business spreadsheet sets column widths, so this is the
+    normal case rather than an edge case, and until this fixture existed nothing
+    in the corpus exercised <cols> at any size. Ten rows, so a small chunkSize
+    spans several chunks and the tests can prove every chunk carries the column
+    layout while row heights arrive with their own rows.
+
+    Widths (character units): A, C and D custom; B left at the sheet default.
+    Heights (points): rows 1 and 7 custom; the rest default.
+    """
+    wb = _new_workbook()
+    ws = wb.active
+
+    ws.column_dimensions["A"].width = 30
+    ws.column_dimensions["C"].width = 4.5
+    ws.column_dimensions["D"].width = 18
+    ws.row_dimensions[1].height = 40
+    ws.row_dimensions[7].height = 28
+
+    ws.append(["name", "qty", "id", "note"])
+    for i in range(1, 10):
+        ws.append([f"row {i}", i * 10, i, "-"])
+
+    _save(wb, "column-widths.xlsx")
+
+
 def gen_big_50k() -> None:
     """A large sheet (~50k rows) for the M2 performance target.
 
@@ -344,11 +372,57 @@ def gen_big_50k() -> None:
     print(f"  wrote {path.relative_to(REPO_ROOT)}  ({ROWS} rows, perf fixture)")
 
 
+def gen_big_50k_wide() -> None:
+    """`big-50k-rows.xlsx` plus custom column widths — the T15.6 device check.
+
+    Verifying "a partial paint does not reflow" needs a file large enough that
+    partial paints actually happen AND wide enough that a reflow would be
+    obvious. The small `column-widths.xlsx` covers the golden values; this one
+    covers the eye.
+
+    Deliberately **not** committed: it is a measurement aid, not a golden
+    fixture, and a second 1.8 MB file would double the corpus for no assertion.
+    Regenerate it when re-measuring, then delete it. See docs/PERF.md.
+    """
+    from openpyxl import Workbook as WriteOnlyWorkbook
+    from openpyxl.utils import get_column_letter
+
+    ROWS = 50_000
+    CATEGORIES = ("alpha", "beta", "gamma", "delta", "epsilon", "zeta")
+    # Wildly non-default, so an unstyled first paint would be unmistakable.
+    WIDTHS = (42.0, 4.0, 4.0, 30.0, 4.0, 26.0, 4.0)
+
+    wb = WriteOnlyWorkbook(write_only=True)
+    ws = wb.create_sheet("Data")
+    for i, width in enumerate(WIDTHS, start=1):
+        ws.column_dimensions[get_column_letter(i)].width = width
+    ws.append(["id", "value", "delta", "count", "pct", "category", "flag"])
+    for i in range(1, ROWS + 1):
+        ws.append([
+            i,
+            (i * 7) % 1000,
+            round((i % 97) / 97.0, 4),
+            i * 3,
+            round((i % 100) / 100.0, 2),
+            CATEGORIES[i % len(CATEGORIES)],
+            i % 2 == 0,
+        ])
+    wb.properties.creator = "Darcha fixture generator"
+    wb.properties.created = _PINNED
+    wb.properties.modified = _PINNED
+
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    path = OUT_DIR / "big-50k-wide.xlsx"
+    wb.save(path)
+    print(f"  wrote {path.relative_to(REPO_ROOT)}  ({ROWS} rows, custom widths, NOT committed)")
+
+
 def main() -> None:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     if "big" in sys.argv[1:]:
-        print("Generating the 50k-row performance fixture ...")
+        print("Generating the 50k-row performance fixtures ...")
         gen_big_50k()
+        gen_big_50k_wide()
         print("Done.")
         return
     print(f"Generating synthetic fixtures into {OUT_DIR.relative_to(REPO_ROOT)} ...")
@@ -360,7 +434,8 @@ def main() -> None:
     gen_dates()
     gen_multisheet()
     gen_sparse_gaps()
-    print("Done: 8 fixtures generated.")
+    gen_column_widths()
+    print("Done: 9 fixtures generated.")
 
 
 if __name__ == "__main__":

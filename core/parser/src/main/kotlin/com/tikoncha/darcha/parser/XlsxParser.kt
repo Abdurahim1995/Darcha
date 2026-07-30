@@ -99,7 +99,10 @@ public class Workbook internal constructor(
      *
      * Rows are streamed: [onChunk] is invoked with each batch of up to
      * [chunkSize] rows as they accumulate, and the complete worksheet (cells +
-     * layout) is returned. Runs on the calling thread — there is no internal
+     * layout) is returned. Each chunk carries the layout its rows are sized by,
+     * so a progressive renderer can place them correctly on first paint — see
+     * [RowsChunk.layout] for exactly how much of the layout is known when.
+     * Runs on the calling thread — there is no internal
      * threading. Returns [ErrorKind.Corrupted] for an out-of-range [index] or a
      * missing/malformed worksheet part.
      */

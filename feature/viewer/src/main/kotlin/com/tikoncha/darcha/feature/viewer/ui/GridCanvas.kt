@@ -71,7 +71,12 @@ public fun GridCanvas(
     }
 
     val textMeasurer = rememberTextMeasurer()
-    val textCache = remember(layout) { CellTextCache() }
+    // Deliberately not keyed on the sheet: entries are keyed by (text, zoom) and
+    // the text style is fixed, so a measurement stays valid whatever sheet it
+    // came from, and the cache is a bounded LRU. Keying it on the layout would
+    // now throw the measurements away on every partial emission of a streaming
+    // parse (T15.6) — exactly when they are being used most.
+    val textCache = remember { CellTextCache() }
 
     val rowHeaderWidth = with(LocalDensity.current) { ROW_HEADER_WIDTH.toPx() }
     val columnHeaderHeight = with(LocalDensity.current) { COLUMN_HEADER_HEIGHT.toPx() }
