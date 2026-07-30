@@ -119,6 +119,18 @@ What a chunk knows follows directly from the order of the XML:
 - **Immutable snapshots** — stable inputs for Compose.
 - A cell stores a **raw value + styleId** (`Number | SharedText(index) | InlineText | Bool | Error`), not a formatted string. Display strings are computed lazily at render time and LRU-cached.
 
+### Formatting (T16)
+
+`ValueFormatter` turns a raw value into text; `FormattedValueCache` is the LRU in front of it, keyed by `(value bits, styleId)` and scoped to one workbook (style ids and shared-string indices mean nothing outside it).
+
+| Decision | Choice | Why |
+|---|---|---|
+| **Locale** | None. `.` decimal separator, `,` thousands, English month and day names. | The format code in the file says `#,##0.00`; rendering `1.234,56` would show something the author never wrote. Excel resolves names against the authoring locale, which a viewer cannot recover. Revisit with T24. |
+| **`General` width** | Fixed digit budget (11 significant), not column-width dependent. | Excel shows fewer digits in a narrow column. A value must not change its text because the user dragged a column edge. |
+| **Format coverage** | `General`, `0`, `0.00`, `#,##0`, `#,##0.00`, `0%`, `0.00%`, and all date/time codes. Everything else renders as `General`. | Fractions, accounting and scientific builtins are rare; a plain number beats a confidently wrong rendering. |
+| **1900-02-29** | Reproduced, not corrected. | See §7 traps and `ExcelSerial` — "fixing" it would shift every pre-1900-03-01 date away from what the authoring app shows. |
+| **Negative date serial** | Falls back to a plain number. | Excel fills the cell with `#####`, which tells the reader nothing. |
+
 ## 9. Rendering (`:feature:viewer`)
 
 - The grid is a **single Canvas composable**; surrounding chrome (toolbar, sheet tabs, error states) is regular Compose.
