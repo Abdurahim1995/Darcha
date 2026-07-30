@@ -46,12 +46,18 @@ public fun ViewerScreen(
     modifier: Modifier = Modifier,
     onScroll: (dx: Float, dy: Float) -> Unit = { _, _ -> },
     onFling: (vx: Float, vy: Float) -> Unit = { _, _ -> },
-    onZoom: (scale: Float) -> Unit = {},
     onBoundsChanged: (ScrollBounds) -> Unit = {},
+    onSelectSheet: (Int) -> Unit = {},
 ) {
     // Stable slices: these change on load, not on every frame of a drag.
     val sheet by remember(state) { derivedStateOf { (state.value as? ViewerState.Ready)?.sheet } }
     val docMeta by remember(state) { derivedStateOf { (state.value as? ViewerState.Ready)?.docMeta } }
+    val activeSheetId by remember(state) {
+        derivedStateOf { (state.value as? ViewerState.Ready)?.activeSheetId ?: 0 }
+    }
+    val loadingSheetId by remember(state) {
+        derivedStateOf { (state.value as? ViewerState.Ready)?.loadingSheetId }
+    }
 
     val readySheet = sheet
     val readyMeta = docMeta
@@ -59,14 +65,16 @@ public fun ViewerScreen(
         GridScreen(
             sheet = readySheet,
             docMeta = readyMeta,
+            activeSheetId = activeSheetId,
+            loadingSheetId = loadingSheetId,
             viewport = {
                 (state.value as? ViewerState.Ready)?.viewport ?: Viewport.INITIAL
             },
             onOpenFile = onOpenFile,
             onScroll = onScroll,
             onFling = onFling,
-            onZoom = onZoom,
             onBoundsChanged = onBoundsChanged,
+            onSelectSheet = onSelectSheet,
             modifier = modifier,
         )
         return

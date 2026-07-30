@@ -1,6 +1,7 @@
 package com.tikoncha.darcha
 
 import android.content.Intent
+import android.util.Log
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -77,8 +78,8 @@ class MainActivity : ComponentActivity() {
                         onRetry = { viewModel.dispatch(ViewerIntent.Retry) },
                         onScroll = { dx, dy -> viewModel.dispatch(ViewerIntent.Scroll(dx, dy)) },
                         onFling = { vx, vy -> viewModel.dispatch(ViewerIntent.Fling(vx, vy)) },
-                        onZoom = { scale -> viewModel.dispatch(ViewerIntent.Zoom(scale, 0f, 0f)) },
                         onBoundsChanged = { viewModel.onScrollBoundsChanged(it) },
+                        onSelectSheet = { viewModel.dispatch(ViewerIntent.SwitchSheet(it)) },
                     )
                 }
             }
@@ -107,6 +108,9 @@ private class ViewerViewModelFactory(
             "Unknown ViewModel class: ${modelClass.name}"
         }
         @Suppress("UNCHECKED_CAST")
-        return ViewerViewModel(repository) as T
+        return ViewerViewModel(
+            repository = repository,
+            onDiagnostic = { Log.d("Darcha.Viewer", it) },
+        ) as T
     }
 }

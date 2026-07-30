@@ -69,6 +69,16 @@ public sealed interface ParseEvent : ViewerEvent {
 
     /** The document failed to load. */
     public data class Failed(public val kind: ErrorKind) : ParseEvent
+
+    /** Another sheet of the open document finished reading (T15). */
+    public data class SheetLoaded(
+        public val index: Int,
+        public val meta: DocumentMeta,
+        public val sheet: SheetSnapshot,
+    ) : ParseEvent
+
+    /** Reading another sheet failed; the current one stays on screen. */
+    public data class SheetFailed(public val kind: ErrorKind) : ParseEvent
 }
 
 /**

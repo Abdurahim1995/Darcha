@@ -78,6 +78,8 @@ public sealed interface ViewerState {
      * @property selection the selected cell, or `null` if nothing is selected.
      * @property scrollBounds how far the viewport may scroll, published by the
      *   renderer once it knows the sheet's used range at this density (§9.2).
+     * @property loadingSheetId the tab being read on demand, or `null` when
+     *   nothing is pending. The grid keeps showing the current sheet meanwhile.
      */
     public data class Ready(
         public val docMeta: DocumentMeta,
@@ -86,6 +88,7 @@ public sealed interface ViewerState {
         public val viewport: Viewport,
         public val selection: CellRef?,
         public val scrollBounds: ScrollBounds = ScrollBounds.UNKNOWN,
+        public val loadingSheetId: Int? = null,
     ) : ViewerState
 
     /**

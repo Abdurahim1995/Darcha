@@ -30,18 +30,12 @@ public object ViewerReducer {
                 if (state is ViewerState.Error) ViewerState.Parsing(progress = 0f) else state
 
             is ViewerIntent.SwitchSheet -> state.mapReady { ready ->
-                // Ignore an out-of-range index rather than showing a blank grid.
-                if (intent.id !in ready.docMeta.sheetNames.indices) {
-                    ready
-                } else {
-                    // A different sheet has its own geometry, so the viewport and
-                    // selection start over.
-                    ready.copy(
-                        activeSheetId = intent.id,
-                        viewport = Viewport.INITIAL,
-                        selection = null,
-                    )
-                }
+                // Only mark the tab as pending here. The sheet is read on demand
+                // (T15), and the grid keeps showing the current one until the
+                // ParseEvent.SheetLoaded arrives — no blank frame in between.
+                val valid = intent.id in ready.docMeta.sheetNames.indices
+                if (!valid || intent.id == ready.activeSheetId) ready
+                else ready.copy(loadingSheetId = intent.id)
             }
 
             is ViewerIntent.Scroll -> state.mapReady { ready ->
@@ -91,6 +85,23 @@ public object ViewerReducer {
 
             is ParseEvent.Failed ->
                 if (state is ViewerState.Parsing) ViewerState.Error(event.kind) else state
+
+            is ParseEvent.SheetLoaded -> state.mapReady { ready ->
+                // A different sheet has its own geometry, so the viewport, the
+                // selection and the scroll limits all start over.
+                ready.copy(
+                    docMeta = event.meta,
+                    sheet = event.sheet,
+                    activeSheetId = event.index,
+                    viewport = Viewport.INITIAL,
+                    selection = null,
+                    scrollBounds = ScrollBounds.UNKNOWN,
+                    loadingSheetId = null,
+                )
+            }
+
+            // The sheet we were reading failed; keep the one already on screen.
+            is ParseEvent.SheetFailed -> state.mapReady { it.copy(loadingSheetId = null) }
         }
 
     private fun reduceRender(state: ViewerState, event: RenderEvent): ViewerState =

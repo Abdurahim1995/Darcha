@@ -1,24 +1,25 @@
 package com.tikoncha.darcha.feature.viewer.ui
 
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.ScrollableTabRow
+import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tikoncha.darcha.feature.viewer.data.SheetSnapshot
 import com.tikoncha.darcha.feature.viewer.mvi.DocumentMeta
@@ -26,27 +27,25 @@ import com.tikoncha.darcha.feature.viewer.mvi.ScrollBounds
 import com.tikoncha.darcha.feature.viewer.mvi.Viewport
 
 /**
- * The grid screen: a header line, the [GridCanvas], and temporary debug controls.
+ * The grid screen: the document header, the [GridCanvas], and the sheet tabs.
  *
  * Nothing here reads the viewport during composition. [viewport] is a lambda the
  * Canvas calls inside its draw block, so dragging invalidates the draw phase
- * only — the title, the buttons and the layout are never recomposed while
- * scrolling. The one intentional exception is [ViewportReadout], isolated in its
- * own composable so it recomposes alone.
- *
- * The debug buttons dispatch the same `Scroll` / `Zoom` intents the gestures do;
- * they stay until T15 as an A/B reference while the fling is tuned.
+ * only — the header, the tabs and the layout are never recomposed while
+ * scrolling (TECH_SPEC §9).
  */
 @Composable
 internal fun GridScreen(
     sheet: SheetSnapshot,
     docMeta: DocumentMeta,
+    activeSheetId: Int,
+    loadingSheetId: Int?,
     viewport: () -> Viewport,
     onOpenFile: () -> Unit,
     onScroll: (dx: Float, dy: Float) -> Unit,
     onFling: (vx: Float, vy: Float) -> Unit,
-    onZoom: (scale: Float) -> Unit,
     onBoundsChanged: (ScrollBounds) -> Unit,
+    onSelectSheet: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var drawnCells by remember { mutableIntStateOf(0) }
@@ -82,46 +81,51 @@ internal fun GridScreen(
             onDrawnCells = { drawnCells = it },
         )
 
-        // Debug viewport controls — an A/B reference for the gestures, removed in T15.
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            OutlinedButton(onClick = { onScroll(-STEP, 0f) }) { Text("←") }
-            OutlinedButton(onClick = { onScroll(STEP, 0f) }) { Text("→") }
-            OutlinedButton(onClick = { onScroll(0f, -STEP) }) { Text("↑") }
-            OutlinedButton(onClick = { onScroll(0f, STEP) }) { Text("↓") }
-            OutlinedButton(onClick = { onZoom(1 / ZOOM_STEP) }) { Text("−") }
-            OutlinedButton(onClick = { onZoom(ZOOM_STEP) }) { Text("+") }
+        // A sheet is being read on demand; the grid keeps showing the current one.
+        if (loadingSheetId != null) {
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
         }
-        ViewportReadout(viewport)
+
+        SheetTabs(
+            sheetNames = docMeta.sheetNames,
+            activeSheetId = activeSheetId,
+            loadingSheetId = loadingSheetId,
+            onSelectSheet = onSelectSheet,
+        )
     }
 }
 
 /**
- * The live scroll/zoom numbers. Split out because showing them *requires*
- * reading the viewport during composition; keeping that read here means this
- * one line recomposes while scrolling, and nothing else does.
+ * The sheet tabs, in workbook order. Scrollable because a workbook may hold more
+ * names than fit, and they can be long.
  */
 @Composable
-private fun ViewportReadout(viewport: () -> Viewport) {
-    val current = viewport()
-    Text(
-        text = "x=${current.scrollX.toInt()} y=${current.scrollY.toInt()} " +
-            "zoom=${"%.1f".format(current.zoom)}",
-        style = MaterialTheme.typography.labelSmall,
-        modifier = Modifier.padding(start = 12.dp, bottom = 8.dp),
-    )
+private fun SheetTabs(
+    sheetNames: List<String>,
+    activeSheetId: Int,
+    loadingSheetId: Int?,
+    onSelectSheet: (Int) -> Unit,
+) {
+    if (sheetNames.isEmpty()) return
+    ScrollableTabRow(
+        selectedTabIndex = activeSheetId.coerceIn(sheetNames.indices),
+        edgePadding = 8.dp,
+    ) {
+        sheetNames.forEachIndexed { index, name ->
+            Tab(
+                selected = index == activeSheetId,
+                // Ignore taps on a tab already being read, so a double tap cannot
+                // queue the same parse twice.
+                onClick = { if (index != loadingSheetId) onSelectSheet(index) },
+                text = {
+                    Text(
+                        text = name,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                },
+            )
+        }
+    }
 }
-
-/** Content pixels moved per debug step — roughly two default columns. */
-private const val STEP = 128f
-
-/** Multiplier per zoom step. */
-private const val ZOOM_STEP = 1.25f
-
-/** Convenience for reading a state holder without recomposing on every change. */
-internal inline fun <T> State<T>.read(): T = value

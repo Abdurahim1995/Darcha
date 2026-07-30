@@ -5,6 +5,8 @@ import androidx.lifecycle.viewModelScope
 import com.tikoncha.darcha.feature.viewer.data.WorkbookLoad
 import com.tikoncha.darcha.feature.viewer.data.WorkbookRepository
 import com.tikoncha.darcha.feature.viewer.data.WorkbookSource
+import com.tikoncha.darcha.feature.viewer.data.SheetSnapshot
+import com.tikoncha.darcha.feature.viewer.mvi.DocumentMeta
 import com.tikoncha.darcha.feature.viewer.mvi.FlingDecay
 import com.tikoncha.darcha.feature.viewer.mvi.ParseEvent
 import com.tikoncha.darcha.feature.viewer.mvi.RenderEvent
@@ -33,10 +35,14 @@ import kotlinx.coroutines.launch
  * @param repository the parser behind an interface, so tests can substitute a fake.
  * @param scope coroutine scope for loads; defaults to `viewModelScope`. Tests
  *   pass their own so no main dispatcher is required.
+ * @param onDiagnostic receives timing notes for the log. Injected rather than
+ *   calling `android.util.Log` directly, which is a throwing stub in unit tests
+ *   and would drag this class onto an instrumented runner.
  */
 public class ViewerViewModel(
     private val repository: WorkbookRepository,
     scope: CoroutineScope? = null,
+    private val onDiagnostic: (String) -> Unit = {},
 ) : ViewModel() {
 
     private val workScope: CoroutineScope = scope ?: viewModelScope
@@ -53,6 +59,23 @@ public class ViewerViewModel(
 
     /** The glide currently running, if any. A new touch cancels it. */
     private var flingJob: Job? = null
+
+    /** The on-demand sheet read in flight, if any. */
+    private var sheetJob: Job? = null
+
+    /**
+     * Recently viewed sheets, newest last (`accessOrder = true`).
+     *
+     * Switching back to a tab should be instant, but a workbook can hold dozens
+     * of large sheets, so only [MAX_CACHED_SHEETS] are kept — the parse is cheap
+     * to repeat, the memory is not (TECH_SPEC §13).
+     */
+    private val sheetCache =
+        object : LinkedHashMap<Int, Pair<DocumentMeta, SheetSnapshot>>(4, 0.75f, true) {
+            override fun removeEldestEntry(
+                eldest: MutableMap.MutableEntry<Int, Pair<DocumentMeta, SheetSnapshot>>,
+            ): Boolean = size > MAX_CACHED_SHEETS
+        }
 
     /** The single entry point for user intents. */
     public fun dispatch(intent: ViewerIntent) {
@@ -71,6 +94,8 @@ public class ViewerViewModel(
                 startLoad(source)
             }
 
+            is ViewerIntent.SwitchSheet -> switchSheet(intent.id)
+
             is ViewerIntent.Fling -> startFling(intent.vx, intent.vy)
 
             is ViewerIntent.Scroll -> {
@@ -80,6 +105,36 @@ public class ViewerViewModel(
             }
 
             else -> apply(intent)
+        }
+    }
+
+    /**
+     * Show the sheet at [index], reading it on demand.
+     *
+     * The read goes through the repository's open **document session**
+     * (TECH_SPEC §9.1) — the temp copy is alive precisely so later sheets can be
+     * parsed without re-importing the file.
+     */
+    private fun switchSheet(index: Int) {
+        val ready = state.value as? ViewerState.Ready ?: return
+        if (index !in ready.docMeta.sheetNames.indices || index == ready.activeSheetId) return
+
+        apply(ViewerIntent.SwitchSheet(index)) // marks the tab pending
+
+        sheetCache[index]?.let { (meta, sheet) ->
+            apply(ParseEvent.SheetLoaded(index, meta, sheet))
+            return
+        }
+
+        sheetJob?.cancel()
+        sheetJob = workScope.launch {
+            when (val result = repository.readSheet(index)) {
+                is WorkbookLoad.Success -> {
+                    sheetCache[index] = result.meta to result.sheet
+                    apply(ParseEvent.SheetLoaded(index, result.meta, result.sheet))
+                }
+                is WorkbookLoad.Failure -> apply(ParseEvent.SheetFailed(result.kind))
+            }
         }
     }
 
@@ -124,12 +179,25 @@ public class ViewerViewModel(
         // A newer request wins: drop the in-flight one so its late callbacks
         // cannot overwrite the new parse.
         loadJob?.cancel()
+        sheetJob?.cancel()
+        sheetCache.clear() // a different document; nothing carries over
         loadJob = workScope.launch {
+            val startedAt = System.currentTimeMillis()
             val result = repository.load(source) { progress ->
                 apply(ParseEvent.Progress(progress))
             }
             when (result) {
-                is WorkbookLoad.Success -> apply(ParseEvent.Loaded(result.meta, result.sheet))
+                is WorkbookLoad.Success -> {
+                    sheetCache[0] = result.meta to result.sheet
+                    // Time-to-first-cell, the §5 product metric; recorded in
+                    // docs/PERF.md.
+                    onDiagnostic(
+                        "loaded '${result.meta.displayName}' " +
+                            "(${result.meta.rowCount} rows) in " +
+                            "${System.currentTimeMillis() - startedAt} ms",
+                    )
+                    apply(ParseEvent.Loaded(result.meta, result.sheet))
+                }
                 is WorkbookLoad.Failure -> apply(ParseEvent.Failed(result.kind))
             }
         }
@@ -143,10 +211,17 @@ public class ViewerViewModel(
     override fun onCleared() {
         loadJob?.cancel()
         flingJob?.cancel()
+        sheetJob?.cancel()
+        sheetCache.clear()
         // The open document dies with the ViewModel: its temp copy is only useful
         // while this screen can still ask for another sheet. The repository is
         // process-scoped and stays usable — a later screen loads into it again.
         repository.closeDocument()
         super.onCleared()
+    }
+
+    private companion object {
+        /** Sheets kept parsed for instant tab switching. */
+        const val MAX_CACHED_SHEETS = 3
     }
 }

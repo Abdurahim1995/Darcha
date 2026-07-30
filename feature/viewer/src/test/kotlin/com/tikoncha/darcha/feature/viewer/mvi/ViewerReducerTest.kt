@@ -31,7 +31,10 @@ class ViewerReducerTest {
         viewport: Viewport = Viewport.INITIAL,
         selection: CellRef? = null,
         scrollBounds: ScrollBounds = ScrollBounds.UNKNOWN,
-    ) = ViewerState.Ready(meta, SheetSnapshot.EMPTY, activeSheetId, viewport, selection, scrollBounds)
+        loadingSheetId: Int? = null,
+    ) = ViewerState.Ready(
+        meta, SheetSnapshot.EMPTY, activeSheetId, viewport, selection, scrollBounds, loadingSheetId,
+    )
 
     // --- the happy path: open -> parsing -> ready ---
 
@@ -107,18 +110,57 @@ class ViewerReducerTest {
     // --- SwitchSheet resets the viewport ---
 
     @Test
-    fun switchSheet_resetsViewportAndSelection() {
+    fun switchSheet_marksTheTabPendingWithoutSwapping() {
+        // The sheet is read on demand, so the grid must keep showing the current
+        // one until SheetLoaded arrives — no blank frame in between.
         val scrolled = ready(
             activeSheetId = 0,
             viewport = Viewport(scrollX = 500f, scrollY = 900f, zoom = 2f),
-            selection = CellRef(row = 12, col = 3),
         )
         val next = reduce(scrolled, ViewerIntent.SwitchSheet(2)) as ViewerState.Ready
 
+        assertEquals(2, next.loadingSheetId)
+        assertEquals("still on the old sheet", 0, next.activeSheetId)
+        assertEquals(scrolled.viewport, next.viewport)
+    }
+
+    @Test
+    fun sheetLoaded_swapsTheSheetAndResetsEverythingViewport() {
+        val pending = ready(
+            activeSheetId = 0,
+            viewport = Viewport(scrollX = 500f, scrollY = 900f, zoom = 2f),
+            selection = CellRef(row = 12, col = 3),
+            scrollBounds = ScrollBounds(999f, 999f),
+            loadingSheetId = 2,
+        )
+        val newMeta = meta.copy(rowCount = 5)
+
+        val next = reduce(
+            pending,
+            ParseEvent.SheetLoaded(index = 2, meta = newMeta, sheet = SheetSnapshot.EMPTY),
+        ) as ViewerState.Ready
+
         assertEquals(2, next.activeSheetId)
+        assertEquals(newMeta, next.docMeta)
         assertEquals(Viewport.INITIAL, next.viewport)
         assertNull(next.selection)
-        assertEquals(meta, next.docMeta)
+        // Stale limits from the previous sheet must not clamp the new one.
+        assertEquals(ScrollBounds.UNKNOWN, next.scrollBounds)
+        assertNull(next.loadingSheetId)
+    }
+
+    @Test
+    fun sheetFailed_keepsTheCurrentSheetAndClearsPending() {
+        val pending = ready(activeSheetId = 1, loadingSheetId = 2)
+        val next = reduce(pending, ParseEvent.SheetFailed(ErrorKind.Corrupted())) as ViewerState.Ready
+        assertEquals(1, next.activeSheetId)
+        assertNull(next.loadingSheetId)
+    }
+
+    @Test
+    fun switchSheet_toTheActiveOne_isIgnored() {
+        val readyState = ready(activeSheetId = 1)
+        assertSame(readyState, reduce(readyState, ViewerIntent.SwitchSheet(1)))
     }
 
     @Test
@@ -256,6 +298,7 @@ class ViewerReducerTest {
         state = reduce(state, ParseEvent.Loaded(meta, SheetSnapshot.EMPTY))
         state = reduce(state, ViewerIntent.Scroll(dx = 80f, dy = 20f))
         state = reduce(state, ViewerIntent.SwitchSheet(1))
+        state = reduce(state, ParseEvent.SheetLoaded(1, meta, SheetSnapshot.EMPTY))
 
         val final = state as ViewerState.Ready
         assertEquals(1, final.activeSheetId)

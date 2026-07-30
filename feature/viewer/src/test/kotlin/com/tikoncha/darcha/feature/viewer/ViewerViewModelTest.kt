@@ -55,7 +55,13 @@ class ViewerViewModelTest {
             return result
         }
 
-        override suspend fun readSheet(index: Int, onProgress: (Float) -> Unit): WorkbookLoad = result
+        var readSheetCount: Int = 0
+            private set
+
+        override suspend fun readSheet(index: Int, onProgress: (Float) -> Unit): WorkbookLoad {
+            readSheetCount++
+            return result
+        }
 
         override fun closeDocument() {
             closeCount++
@@ -142,16 +148,48 @@ class ViewerViewModelTest {
     }
 
     @Test
-    fun switchSheet_resetsViewport() {
-        val vm = viewModel(FakeRepository(WorkbookLoad.Success(meta, SheetSnapshot.EMPTY)))
+    fun switchSheet_readsOnDemandAndResetsViewport() {
+        val repository = FakeRepository(WorkbookLoad.Success(meta, SheetSnapshot.EMPTY))
+        val vm = viewModel(repository)
         vm.dispatch(ViewerIntent.OpenFile(source))
         vm.dispatch(ViewerIntent.Scroll(dx = 300f, dy = 400f))
 
         vm.dispatch(ViewerIntent.SwitchSheet(1))
 
+        assertEquals("sheet 1 must be read through the session", 1, repository.readSheetCount)
         val state = vm.state.value as ViewerState.Ready
         assertEquals(1, state.activeSheetId)
         assertEquals(Viewport.INITIAL, state.viewport)
+        assertEquals(null, state.loadingSheetId)
+    }
+
+    @Test
+    fun switchingBack_usesTheCacheInsteadOfReReading() {
+        // The LRU keeps recent sheets parsed, so returning to a tab is instant.
+        val repository = FakeRepository(WorkbookLoad.Success(meta, SheetSnapshot.EMPTY))
+        val vm = viewModel(repository)
+        vm.dispatch(ViewerIntent.OpenFile(source))
+
+        vm.dispatch(ViewerIntent.SwitchSheet(1))
+        assertEquals(1, repository.readSheetCount)
+
+        vm.dispatch(ViewerIntent.SwitchSheet(0)) // sheet 0 was cached at load
+        assertEquals("no second read for a cached sheet", 1, repository.readSheetCount)
+
+        vm.dispatch(ViewerIntent.SwitchSheet(1)) // cached by the first switch
+        assertEquals(1, repository.readSheetCount)
+        assertEquals(1, (vm.state.value as ViewerState.Ready).activeSheetId)
+    }
+
+    @Test
+    fun switchSheet_toTheActiveOne_doesNotRead() {
+        val repository = FakeRepository(WorkbookLoad.Success(meta, SheetSnapshot.EMPTY))
+        val vm = viewModel(repository)
+        vm.dispatch(ViewerIntent.OpenFile(source))
+
+        vm.dispatch(ViewerIntent.SwitchSheet(0))
+
+        assertEquals(0, repository.readSheetCount)
     }
 
     // --- fling (T14) ---
