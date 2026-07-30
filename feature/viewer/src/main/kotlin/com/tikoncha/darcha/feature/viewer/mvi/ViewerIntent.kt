@@ -44,7 +44,26 @@ public sealed interface ViewerIntent : ViewerEvent {
         public val focalY: Float,
     ) : ViewerIntent
 
-    /** A tap at viewport pixel ([x], [y]), to be hit-tested to a cell. */
+    /**
+     * Double tap at the focal point ([focalX], [focalY]): return to zoom 1.
+     *
+     * Like [Fling], this is a *request*: the ViewModel owns the animation and
+     * feeds it back as ordinary [Zoom] intents, so the reducer stays a pure
+     * function of the events it already knows.
+     */
+    public data class ResetZoom(
+        public val focalX: Float,
+        public val focalY: Float,
+    ) : ViewerIntent
+
+    /**
+     * A tap at viewport pixel ([x], [y]), to be hit-tested to a cell.
+     *
+     * **Not wired.** Cell selection is post-v1 (TECH_SPEC §14). The pieces exist
+     * — `MergeIndex.anchorOf` maps a covered cell to its merge anchor (T18), and
+     * [ViewerState.Ready] already carries a `selection` — but nothing dispatches
+     * this and the reducer ignores it. That is a decision, not an oversight.
+     */
     public data class TapCell(public val x: Float, public val y: Float) : ViewerIntent
 
     /** Retry the last failed load. */

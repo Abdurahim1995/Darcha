@@ -2,7 +2,9 @@ package com.tikoncha.darcha.feature.viewer.ui
 
 import android.util.Log
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -14,6 +16,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.platform.LocalDensity
@@ -65,6 +68,8 @@ public fun GridCanvas(
     viewport: () -> Viewport,
     onScroll: (dx: Float, dy: Float) -> Unit,
     onFling: (vx: Float, vy: Float) -> Unit,
+    onZoom: (scale: Float, focalX: Float, focalY: Float) -> Unit,
+    onResetZoom: (focalX: Float, focalY: Float) -> Unit,
     onBoundsChanged: (ScrollBounds) -> Unit,
     modifier: Modifier = Modifier,
     onDrawnCells: (Int) -> Unit = {},
@@ -133,28 +138,83 @@ public fun GridCanvas(
         )
     }
 
-    val gestures = Modifier.pointerInput(geometry) {
+    // One gesture loop rather than stacked detectors, because a pinch and a drag
+    // are the same stream of pointers and only the pointer *count* tells them
+    // apart. detectDragGestures cannot see that count, so a second detector for
+    // zoom would double-apply the pan.
+    val gestures = Modifier.pointerInput(geometry, panes) {
         val tracker = VelocityTracker()
-        detectDragGestures(
-            onDragStart = { tracker.resetTracking() },
-            onDragCancel = { tracker.resetTracking() },
-            onDragEnd = {
+        awaitEachGesture {
+            tracker.resetTracking()
+            awaitFirstDown(requireUnconsumed = false)
+            var pinching = false
+            var lastCentroid = Offset.Zero
+            var lastSpread = 0f
+
+            while (true) {
+                val event = awaitPointerEvent()
+                val pressed = event.changes.filter { it.pressed }
+                if (pressed.isEmpty()) break
+
+                if (pressed.size >= 2) {
+                    val centroid = centroidOf(pressed)
+                    val spread = spreadOf(pressed, centroid)
+                    if (!pinching) {
+                        // First frame of the pinch: record the baseline only, or
+                        // the second finger landing would read as a huge scale.
+                        pinching = true
+                    } else if (lastSpread > 0f && spread > 0f) {
+                        val current = viewport()
+                        onZoom(
+                            spread / lastSpread,
+                            focalX(centroid.x, rowHeaderWidth, panes.frozenWidth(current)),
+                            focalY(centroid.y, columnHeaderHeight, panes.frozenHeight(current)),
+                        )
+                        // Two fingers moving together still pan.
+                        val pan = centroid - lastCentroid
+                        if (pan != Offset.Zero) {
+                            onScroll(-pan.x / current.zoom, -pan.y / current.zoom)
+                        }
+                    }
+                    lastCentroid = centroid
+                    lastSpread = spread
+                    pressed.forEach { it.consume() }
+                } else if (!pinching) {
+                    // Once a gesture has become a pinch it stays one, so lifting
+                    // to a single finger does not turn into a drag.
+                    val change = pressed.first()
+                    val delta = change.position - change.previousPosition
+                    if (delta != Offset.Zero) {
+                        tracker.addPosition(change.uptimeMillis, change.position)
+                        val zoom = viewport().zoom
+                        onScroll(-delta.x / zoom, -delta.y / zoom)
+                        change.consume()
+                    }
+                }
+            }
+
+            // Lifting two fingers is not a flick, so a pinch never flings.
+            if (!pinching) {
                 val velocity = tracker.calculateVelocity()
                 val zoom = viewport().zoom
-                // Screen px/s -> content px/s, and inverted: flicking left sends
-                // the viewport right (TECH_SPEC §9.2).
                 onFling(-velocity.x / zoom, -velocity.y / zoom)
-            },
-            onDrag = { change, dragAmount ->
-                change.consume()
-                tracker.addPosition(change.uptimeMillis, change.position)
-                val zoom = viewport().zoom
-                onScroll(-dragAmount.x / zoom, -dragAmount.y / zoom)
+            }
+        }
+    }
+
+    val taps = Modifier.pointerInput(geometry, panes) {
+        detectTapGestures(
+            onDoubleTap = { offset ->
+                val current = viewport()
+                onResetZoom(
+                    focalX(offset.x, rowHeaderWidth, panes.frozenWidth(current)),
+                    focalY(offset.y, columnHeaderHeight, panes.frozenHeight(current)),
+                )
             },
         )
     }
 
-    Canvas(modifier = modifier.then(gestures)) {
+    Canvas(modifier = modifier.then(taps).then(gestures)) {
         // Read inside the draw block: a viewport change then invalidates only the
         // draw phase, never recomposing the surrounding chrome.
         val current = viewport()
@@ -367,8 +427,9 @@ private fun DrawScope.drawRegion(
                     weight = style.fontWeight,
                     italic = style.fontStyle,
                     align = style.resolveAlignment(value),
+                    padding = CELL_PADDING * viewport.zoom,
                     verticalOffset = { textHeight ->
-                        style.verticalOffset(cellHeight, textHeight, CELL_PADDING)
+                        style.verticalOffset(cellHeight, textHeight, CELL_PADDING * viewport.zoom)
                     },
                 )
             }
@@ -444,7 +505,7 @@ private fun DrawScope.drawHeaders(
                     top = 0f,
                     width = geometry.screenWidthOf(column, region.viewport),
                     height = columnHeaderHeight,
-                    zoom = region.viewport.zoom,
+                    zoom = HEADER_ZOOM,
                     textMeasurer = textMeasurer,
                     cache = cache,
                     color = HEADER_TEXT,
@@ -473,7 +534,7 @@ private fun DrawScope.drawHeaders(
                     top = region.originY + geometry.screenYOf(row, region.viewport),
                     width = rowHeaderWidth,
                     height = geometry.screenHeightOf(row, region.viewport),
-                    zoom = region.viewport.zoom,
+                    zoom = HEADER_ZOOM,
                     textMeasurer = textMeasurer,
                     cache = cache,
                     color = HEADER_TEXT,
@@ -508,6 +569,7 @@ private fun DrawScope.drawCellText(
     weight: FontWeight = FontWeight.Normal,
     italic: FontStyle = FontStyle.Normal,
     align: TextAlign = TextAlign.Left,
+    padding: Float = CELL_PADDING,
     verticalOffset: (textHeight: Float) -> Float = { textHeight -> (height - textHeight) / 2f },
 ) {
     if (width <= 0f || height <= 0f) return
@@ -517,7 +579,8 @@ private fun DrawScope.drawCellText(
         textMeasurer.measure(
             text = text,
             style = TextStyle(
-                fontSize = CELL_FONT_SIZE * zoom,
+                // The bucket's zoom, not the exact one — see measuredZoomOf.
+                fontSize = CELL_FONT_SIZE * CellTextCache.measuredZoomOf(zoom),
                 color = color,
                 fontWeight = weight,
                 fontStyle = italic,
@@ -532,12 +595,37 @@ private fun DrawScope.drawCellText(
             textLayoutResult = layoutResult,
             color = color,
             topLeft = Offset(
-                x = left + horizontalOffset(align, width, layoutResult.size.width.toFloat(), CELL_PADDING),
+                x = left + horizontalOffset(align, width, layoutResult.size.width.toFloat(), padding),
                 y = top + verticalOffset(layoutResult.size.height.toFloat()),
             ),
         )
     }
 }
+
+/** Average position of the pressed pointers. */
+private fun centroidOf(pointers: List<PointerInputChange>): Offset {
+    var sum = Offset.Zero
+    for (pointer in pointers) sum += pointer.position
+    return sum / pointers.size.toFloat()
+}
+
+/** Mean distance of the pressed pointers from [centroid] — the pinch's "size". */
+private fun spreadOf(pointers: List<PointerInputChange>, centroid: Offset): Float {
+    var total = 0f
+    for (pointer in pointers) total += (pointer.position - centroid).getDistance()
+    return total / pointers.size
+}
+
+/**
+ * A screen x turned into the coordinate the scroll addresses: past the row
+ * header, and past the frozen columns, which do not scroll (TECH_SPEC §9.2).
+ */
+private fun focalX(screenX: Float, headerWidth: Float, frozenWidth: Float): Float =
+    (screenX - headerWidth - frozenWidth).coerceAtLeast(0f)
+
+/** The vertical mirror of [focalX]. */
+private fun focalY(screenY: Float, headerHeight: Float, frozenHeight: Float): Float =
+    (screenY - headerHeight - frozenHeight).coerceAtLeast(0f)
 
 /** Last count written to logcat, so an unchanged viewport does not spam it. */
 private var lastLoggedCellCount = -1
@@ -547,6 +635,13 @@ private val ROW_HEADER_WIDTH = 44.dp
 private val COLUMN_HEADER_HEIGHT = 22.dp
 private val CELL_FONT_SIZE = 11.sp
 private const val CELL_PADDING = 4f
+
+/**
+ * Header labels never scale with zoom (TECH_SPEC §9.2): the strips are a fixed
+ * size, so scaling their text would overflow them, and row numbers are most
+ * useful precisely when the sheet is zoomed out.
+ */
+private const val HEADER_ZOOM = 1f
 private const val GRID_STROKE = 1f
 private val GRID_LINE = Color(0xFFD0D0D0)
 

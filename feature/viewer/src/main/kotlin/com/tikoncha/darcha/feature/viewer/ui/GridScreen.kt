@@ -45,6 +45,8 @@ internal fun GridScreen(
     onOpenFile: () -> Unit,
     onScroll: (dx: Float, dy: Float) -> Unit,
     onFling: (vx: Float, vy: Float) -> Unit,
+    onZoom: (scale: Float, focalX: Float, focalY: Float) -> Unit,
+    onResetZoom: (focalX: Float, focalY: Float) -> Unit,
     onBoundsChanged: (ScrollBounds) -> Unit,
     onSelectSheet: (Int) -> Unit,
     modifier: Modifier = Modifier,
@@ -75,6 +77,8 @@ internal fun GridScreen(
             viewport = viewport,
             onScroll = onScroll,
             onFling = onFling,
+            onZoom = onZoom,
+            onResetZoom = onResetZoom,
             onBoundsChanged = onBoundsChanged,
             modifier = Modifier
                 .fillMaxWidth()

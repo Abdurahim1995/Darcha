@@ -93,11 +93,21 @@ internal class CellTextCache<V>(private val maxEntries: Int = DEFAULT_MAX_ENTRIE
          *
          * A portrait viewport draws at most ~480 cells, and every one of them
          * could be a distinct `(text, styleId)` pair. 512 held barely one screen
-         * — fine while the key ignored style, thrashing once it did not. This is
-         * roughly four screens, so scrolling back over cells just left behind
-         * still hits. Measured hit rates are in docs/PERF.md.
+         * — fine while the key ignored style, thrashing once it did not (T17).
+         *
+         * Zoom then widened it again: the key includes a zoom bucket, so a pinch
+         * keeps several buckets alive at once. Measured on `styled-20k.xlsx`
+         * across a 1.0 → 2.9 → 0.5 → 1.0 sweep, the live set peaks at **3,839**
+         * — 2,048 sat saturated throughout. This covers that peak.
+         *
+         * Worth knowing before raising it further: at 2,048 the hit rate was 80%
+         * and with an effectively unlimited cache 81%, because during a zoom the
+         * misses are mostly *compulsory* — a bucket never measured before — not
+         * capacity misses. The reason to cover the peak is the ~1,800 layouts
+         * that would otherwise be evicted and re-measured per gesture, not the
+         * hit rate. Numbers in docs/PERF.md.
          */
-        private const val DEFAULT_MAX_ENTRIES = 2_048
+        private const val DEFAULT_MAX_ENTRIES = 4_096
 
         /**
          * The style id used for the row-number and column-letter strips. Cell
@@ -107,5 +117,17 @@ internal class CellTextCache<V>(private val maxEntries: Int = DEFAULT_MAX_ENTRIE
 
         /** Zoom quantized to 0.1 steps, so nearby zooms share measurements. */
         fun zoomBucketOf(zoom: Float): Int = (zoom * 10f).roundToLong().toInt()
+
+        /**
+         * The zoom a layout is actually **measured** at: the centre of its
+         * bucket, not the exact pinch value.
+         *
+         * Measuring at the exact zoom would make a cached layout depend on which
+         * zoom happened to reach the bucket first, so the same sheet could come
+         * out different after two different pinches. Quantizing the measurement
+         * as well as the key costs at most 5% of a text size and makes the
+         * render deterministic (TECH_SPEC §9.2).
+         */
+        fun measuredZoomOf(zoom: Float): Float = zoomBucketOf(zoom) / 10f
     }
 }

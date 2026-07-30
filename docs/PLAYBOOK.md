@@ -36,7 +36,7 @@ Prerequisites in repo: `CLAUDE.md` (root), `docs/TECH_SPEC.md`, this file.
 >
 > **T15.6 — DONE.** T15.5 left partial paints using default column widths, which real business spreadsheets almost never have — reflow-on-completion would have been the normal case. Chunks now carry their layout (§7), so the first paint is already correctly sized.
 
-**M3 — Fidelity**
+**M3 — Fidelity — ✅ COMPLETE**
 - [x] T16 Format engine · [x] T17 Style render · [x] T18 Merged cells · [x] T19 Frozen panes · [ ] T20 Pinch zoom
 
 > **T16 — DONE.** `ValueFormatter` in `:core:model`, with the 1900 leap-year bug reproduced deliberately (§8). Purely additive — 8 new files, nothing existing edited, `:core:parser` untouched.
@@ -46,6 +46,10 @@ Prerequisites in repo: `CLAUDE.md` (root), `docs/TECH_SPEC.md`, this file.
 > **T18 — DONE.** Merged ranges draw once at their anchor across the span, covered cells are skipped, and hit-testing maps a covered cell to its anchor. The skip set is a sorted interval index, not a set of cells — one `A1:C1048576` merge would otherwise cost three million entries. Verified against both merged fixtures; late-arriving merges documented in §7 and `docs/PERF.md`.
 >
 > **T19 — DONE.** Four clipped regions with translated origins; header strips split the same way. `<sheetViews>` precedes `<sheetData>` on every fixture checked, so frozen panes now ride with the first chunk (a narrow additive `:core:parser` change) — the grid never re-splits mid-parse. Seams asserted as exact equalities at seven zoom levels, and inspected at 4× magnification on device at four. Scrolling gained a floor, clamped in the reducer *and* in the region maths, which fixed a real first-frame glitch.
+>
+> **T20 — DONE.** Centroid-anchored pinch, double-tap back to 1.0, and the §9.2 density/zoom question resolved first: content scales, chrome does not — which also fixed header labels overflowing their strip above ~1.5×. Focal drift measured at **0.0 px over 72 zoom events** on device. Text cache re-measured under a zoom sweep (peak 3,839 live keys) and raised to 4,096. `TapCell` deliberately left unwired — selection is post-v1 (§14).
+>
+> **M3 exit criteria — met.** The grid now renders what the file actually says: formatted values, cell styles, merged ranges, frozen panes, and zoom.
 
 **M4 — Product polish**
 - [ ] T21 ACTION_VIEW · [ ] T22 Recent files · [ ] T23 Error UI · [ ] T24 Icon+theme+UZ · 🧑 OWNER: GIFs · [ ] T25 README+metrics · 🧑 OWNER: keystore · [ ] T26 Release v1.0

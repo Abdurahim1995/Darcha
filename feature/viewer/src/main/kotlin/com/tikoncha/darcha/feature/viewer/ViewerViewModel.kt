@@ -13,6 +13,7 @@ import com.tikoncha.darcha.feature.viewer.mvi.RenderEvent
 import com.tikoncha.darcha.feature.viewer.mvi.ScrollBounds
 import com.tikoncha.darcha.feature.viewer.mvi.ViewerEvent
 import com.tikoncha.darcha.feature.viewer.mvi.ViewerIntent
+import com.tikoncha.darcha.feature.viewer.mvi.ZoomAnimation
 import com.tikoncha.darcha.feature.viewer.mvi.ViewerReducer
 import com.tikoncha.darcha.feature.viewer.mvi.ViewerState
 import kotlinx.coroutines.CoroutineScope
@@ -68,6 +69,7 @@ public class ViewerViewModel(
 
     /** The glide currently running, if any. A new touch cancels it. */
     private var flingJob: Job? = null
+    private var zoomJob: Job? = null
 
     /** The on-demand sheet read in flight, if any. */
     private var sheetJob: Job? = null
@@ -107,9 +109,18 @@ public class ViewerViewModel(
 
             is ViewerIntent.Fling -> startFling(intent.vx, intent.vy)
 
+            is ViewerIntent.ResetZoom -> startZoomReset(intent.focalX, intent.focalY)
+
             is ViewerIntent.Scroll -> {
                 // Any deliberate scroll — a finger going down mid-glide — wins.
                 flingJob?.cancel()
+                apply(intent)
+            }
+
+            is ViewerIntent.Zoom -> {
+                // A pinch beats a glide and beats a running double-tap animation.
+                flingJob?.cancel()
+                zoomJob?.cancel()
                 apply(intent)
             }
 
@@ -179,6 +190,37 @@ public class ViewerViewModel(
                 if (state.value == before) return@launch
                 velocityX = FlingDecay.decay(velocityX)
                 velocityY = FlingDecay.decay(velocityY)
+                delay(FlingDecay.FRAME_MILLIS)
+            }
+        }
+    }
+
+    /**
+     * Animate the zoom back to 1 about ([focalX], [focalY]) — the double tap.
+     *
+     * Built like [startFling]: the animation lives here so it survives
+     * recomposition and can be cancelled by the next touch, and it is fed back
+     * as ordinary [ViewerIntent.Zoom]s so the reducer never learns that an
+     * animation happened.
+     *
+     * Each step is a *ratio*, because zoom composes multiplicatively — stepping
+     * by a constant difference would crawl at one end of the range and jump at
+     * the other.
+     */
+    private fun startZoomReset(focalX: Float, focalY: Float) {
+        zoomJob?.cancel()
+        val start = (state.value as? ViewerState.Ready)?.viewport?.zoom ?: return
+        if (kotlin.math.abs(start - ZoomAnimation.TARGET) < ZoomAnimation.EPSILON) return
+
+        zoomJob = workScope.launch {
+            for (frame in 1..ZoomAnimation.FRAMES) {
+                if (!isActive) return@launch
+                val progress = frame.toFloat() / ZoomAnimation.FRAMES
+                val eased = ZoomAnimation.ease(progress)
+                val want = ZoomAnimation.zoomAt(start, eased)
+                val now = (state.value as? ViewerState.Ready)?.viewport?.zoom ?: return@launch
+                if (now <= 0f) return@launch
+                apply(ViewerIntent.Zoom(scale = want / now, focalX = focalX, focalY = focalY))
                 delay(FlingDecay.FRAME_MILLIS)
             }
         }

@@ -207,10 +207,44 @@ when it builds the geometry (`maxDigitWidth × density`, `pointToPixel × densit
 so geometry output is directly usable as Canvas coordinates and the engine itself
 stays device-independent and testable.
 
-> **Open question for T20.** Density and zoom are both plain multipliers today and
-> compose as `density × zoom`. Once pinch zoom is focal-point anchored, that may
-> need separating — for example keeping text at a legible size independent of
-> zoom. Revisit before implementing T20.
+### Density and zoom (resolved in T20)
+
+T13 left this open: both are plain multipliers composing as `density × zoom`, and
+the question was whether they need separating. **They do not need separating, but
+they apply to different things**, and that is the resolution:
+
+| | Scales with zoom | Multiplier |
+|---|---|---|
+| Cell text, cell padding, column widths, row heights | **yes** | `density × zoom` |
+| Header strips and their labels | **no** | `density` |
+| Gridline and freeze-separator stroke widths | **no** | `density` |
+
+**Why content scales.** Zooming out to see more of a sheet is the whole purpose
+of the gesture; text getting smaller is not a side effect to be corrected but the
+thing the user asked for. Every spreadsheet behaves this way, and a viewer that
+kept text at a fixed size would reflow the grid instead of scaling it.
+
+**Why chrome does not.** Row numbers and column letters are navigation aids, not
+content. Three things follow from keeping them fixed:
+
+1. They stay legible at low zoom — exactly when you are surveying a large sheet
+   and need them most.
+2. The sheet keeps the maximum drawable area at every zoom, instead of losing a
+   growing strip to headers as you zoom in.
+3. **The grid origin stays zoom-independent**, which is what lets §9 hold its
+   frozen-pane seam property: the frozen *extent* scales with zoom while the
+   origin does not, so a boundary is still one number per axis rather than a sum
+   of two that round separately.
+
+Left as it was, header *labels* scaled with zoom inside a fixed-size strip, so
+they overflowed it above about zoom 1.5. That is fixed as part of this decision,
+not discovered during it.
+
+**Zoom is quantized for measurement.** The text cache keys on a zoom bucket of
+0.1, and a layout is measured at the **bucket's** zoom rather than the exact one.
+Measuring at the exact zoom would make a cached layout depend on which zoom
+happened to reach the bucket first, so the same sheet could render differently
+after two different pinches.
 
 ## 10. MVI contract
 

@@ -45,17 +45,30 @@ public object ViewerReducer {
             }
 
             is ViewerIntent.Zoom -> state.mapReady { ready ->
-                // Focal-point compensation needs the geometry engine, so T20
-                // revisits this; for now zoom is applied and clamped.
-                ready.copy(viewport = ready.viewport.zoomedBy(intent.scale))
+                // The focal point keeps the cell under the fingers where it was
+                // (TECH_SPEC §9.2); the same bounds that clamp a drag clamp the
+                // compensation, so zooming cannot walk off the sheet.
+                ready.copy(
+                    viewport = ready.viewport.zoomedAt(
+                        scale = intent.scale,
+                        focusX = intent.focalX,
+                        focusY = intent.focalY,
+                        bounds = ready.scrollBounds,
+                    ),
+                )
             }
+
+            // A request, like Fling: the ViewModel animates it back to 1 and
+            // feeds the steps in as Zoom intents.
+            is ViewerIntent.ResetZoom -> state
 
             // A fling is a *request* to keep moving: the ViewModel owns the decay
             // and feeds it back as ordinary Scroll intents, so the reducer sees
             // nothing new and the state stays a pure function of the events.
             is ViewerIntent.Fling -> state
 
-            // Cell hit-testing needs the renderer's geometry; T20 wires it up.
+            // Deliberately inert: selection is post-v1 (TECH_SPEC §14). See
+            // ViewerIntent.TapCell.
             is ViewerIntent.TapCell -> state
         }
 
@@ -177,6 +190,38 @@ internal fun Viewport.scrolledBy(dx: Float, dy: Float, bounds: ScrollBounds): Vi
 private fun clampScroll(value: Float, min: Float, max: Float): Float {
     val floor = min.coerceAtLeast(0f)
     return value.coerceAtLeast(floor).coerceAtMost(max.coerceAtLeast(floor))
+}
+
+/**
+ * Zoom by [scale] about the point ([focusX], [focusY]), so the content under
+ * that point stays under it (TECH_SPEC §9.2).
+ *
+ * The focus is in **screen pixels relative to the grid's content origin** — the
+ * caller subtracts the header strips and, on a frozen sheet, the frozen extent,
+ * because those are the coordinates the scroll actually addresses.
+ *
+ * The content point under the focus is `scroll + focus / zoom`. Holding it fixed
+ * across a zoom change gives
+ *
+ * ```
+ * scroll' = scroll + focus × (1 / zoom − 1 / zoom')
+ * ```
+ *
+ * which is the whole of pinch-to-zoom. Note it is driven by the *clamped* new
+ * zoom: at the 0.5 and 3.0 stops the scale is refused, and the compensation has
+ * to be refused with it or the sheet would drift while the zoom stood still.
+ */
+internal fun Viewport.zoomedAt(
+    scale: Float,
+    focusX: Float,
+    focusY: Float,
+    bounds: ScrollBounds = ScrollBounds.UNKNOWN,
+): Viewport {
+    val target = (zoom * scale).coerceIn(Viewport.MIN_ZOOM, Viewport.MAX_ZOOM)
+    if (target == zoom) return this
+    val shiftX = focusX * (1f / zoom - 1f / target)
+    val shiftY = focusY * (1f / zoom - 1f / target)
+    return copy(zoom = target).scrolledBy(shiftX, shiftY, bounds)
 }
 
 /** Multiply the zoom by [scale], clamped to the allowed range. */

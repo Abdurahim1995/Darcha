@@ -78,6 +78,12 @@ class MainActivity : ComponentActivity() {
                         onRetry = { viewModel.dispatch(ViewerIntent.Retry) },
                         onScroll = { dx, dy -> viewModel.dispatch(ViewerIntent.Scroll(dx, dy)) },
                         onFling = { vx, vy -> viewModel.dispatch(ViewerIntent.Fling(vx, vy)) },
+                        onZoom = { scale, fx, fy ->
+                            viewModel.dispatch(ViewerIntent.Zoom(scale, fx, fy))
+                        },
+                        onResetZoom = { fx, fy ->
+                            viewModel.dispatch(ViewerIntent.ResetZoom(fx, fy))
+                        },
                         onBoundsChanged = { viewModel.onScrollBoundsChanged(it) },
                         onSelectSheet = { viewModel.dispatch(ViewerIntent.SwitchSheet(it)) },
                     )

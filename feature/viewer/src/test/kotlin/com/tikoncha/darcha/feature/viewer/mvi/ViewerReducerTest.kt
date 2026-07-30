@@ -214,12 +214,36 @@ class ViewerReducerTest {
         assertEquals(Viewport.MIN_ZOOM, clampedOut.viewport.zoom, 0f)
     }
 
+    /**
+     * Before T20 this asserted that zooming left scroll alone, because the focal
+     * point was ignored. Holding the focal cell under the fingers is the whole
+     * of pinch zoom, so scroll now moves *with* it — the arithmetic lives in
+     * `FocalZoomTest`; this pins that the reducer actually applies it.
+     */
     @Test
-    fun zoom_preservesScrollOffsets() {
+    fun zoom_movesScrollToHoldTheFocalPoint() {
         val scrolled = ready(viewport = Viewport(scrollX = 100f, scrollY = 200f))
         val next = reduce(scrolled, ViewerIntent.Zoom(1.5f, 50f, 50f)) as ViewerState.Ready
+
+        // 50 x (1/1 - 1/1.5) = 16.67 of compensation on each axis.
+        assertEquals(116.67f, next.viewport.scrollX, 0.01f)
+        assertEquals(216.67f, next.viewport.scrollY, 0.01f)
+    }
+
+    /** Zooming about the top-left corner is pure scaling, so scroll stands still. */
+    @Test
+    fun zoom_aboutTheOrigin_leavesScrollAlone() {
+        val scrolled = ready(viewport = Viewport(scrollX = 100f, scrollY = 200f))
+        val next = reduce(scrolled, ViewerIntent.Zoom(1.5f, 0f, 0f)) as ViewerState.Ready
         assertEquals(100f, next.viewport.scrollX, 0f)
         assertEquals(200f, next.viewport.scrollY, 0f)
+    }
+
+    /** A double tap is a request; the ViewModel animates it, the reducer ignores it. */
+    @Test
+    fun resetZoom_isInertInTheReducer() {
+        val state = ready(viewport = Viewport(zoom = 2.5f))
+        assertEquals(state, reduce(state, ViewerIntent.ResetZoom(100f, 100f)))
     }
 
     // --- progressive first paint (T15.5) ---

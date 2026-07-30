@@ -123,28 +123,45 @@ into a sheet whose used range ends at `AA100`, or into one where every cell
 carries a fill and a font does not change it — which is the whole point of the
 culling. **T17 added styling without adding a single drawn cell.**
 
-## Text measurement cache (T17)
+## Text measurement cache (T17, re-measured in T20)
 
 The cache key gained the style id in T17 — bold, italic and colour are different
-glyphs, so one measurement can no longer serve two styles. That multiplies keys
-wherever the same text appears under different styles, so the capacity was
-re-checked rather than assumed.
+glyphs, so one measurement can no longer serve two styles. T20 added a zoom
+bucket to the same key. Both widen the key, so the capacity was re-measured each
+time rather than assumed.
 
-Measured by scrolling ~200 rows and reading the `Darcha.Grid` log:
+Measured by scrolling ~200 rows at a fixed zoom and reading the `Darcha.Grid` log:
 
 | Sheet | Styles | Live keys | Hit rate at 2048 |
 |---|---|---|---|
 | `big-50k-rows.xlsx` | 1 | **1,109–1,111** | 100% |
 | `styled-20k.xlsx` — fill, colour, bold/italic and alignment cycling over 8 combinations | 8 | **1,756** | 100% |
 
-The old capacity was **512**. On both sheets the cache sat pegged at exactly 512
-entries — saturated, evicting layouts still on screen — against a working set of
-2–3.4× that. 2,048 holds both with room to spare; the heavily styled sheet is the
-worst case at 86% full, and a viewport is only ~260 cells, so that is still about
-eight screens of slack before an entry that is still visible can be evicted.
+The pre-T17 capacity was **512**. On both sheets the cache sat pegged at exactly
+512 entries — saturated, evicting layouts still on screen — against a working set
+2–3.4× that.
 
-Java heap with 1,756 layouts cached: **21.9 MB** (`dumpsys meminfo`, total PSS
-100 MB). Growing the cache four times over cost single-digit megabytes.
+### Under a zoom sweep (T20)
+
+A pinch keeps several buckets alive at once, so the fixed-zoom numbers above are
+a floor, not the worst case. Measured on `styled-20k.xlsx` across a scripted
+1.0 → 2.9 → 0.5 → 1.0 sweep:
+
+| Capacity | Peak entries | Hit rate |
+|---|---|---|
+| 2,048 | **2,048 — saturated** | 80% |
+| effectively unlimited | **3,839** | 81% |
+
+**The hit rate barely moves**, which is the interesting part: during a zoom most
+misses are *compulsory* — a bucket never measured before — not capacity misses,
+so a bigger cache cannot prevent them. Capacity was raised to **4,096** anyway,
+to cover the measured peak: the cost of saturation is not the hit rate but the
+~1,800 `TextLayoutResult`s evicted and re-measured on every gesture, which is GC
+pressure the hit rate does not show. On the evidence, 2,048 would also have been
+defensible; 4,096 buys the eviction churn for about 5 MB of transient heap.
+
+Java heap: **21.9 MB** at 1,756 cached layouts, **26.9 MB** at 3,839
+(`dumpsys meminfo`; total PSS 100–114 MB).
 
 ## Scroll
 
@@ -155,6 +172,31 @@ not a substitute for a human hand on glass):
 - A flick glides and decays to a stop.
 - Scrolling clamps at the used range: on the 7-column fixture the offset stops at
   `x=912` and repeated flicks do not move it further.
+
+### Focal-point stability (T20)
+
+Pinch zoom promises that the cell under the fingers stays under them. That was
+measured, not eyeballed: the ViewModel was temporarily instrumented to log the
+content coordinate under the focal point before and after every zoom step, and a
+scripted sweep drove **72 zoom events** about a fixed focal point on
+`styled-20k.xlsx`.
+
+**Drift: 0.0 content pixels on both axes, every event.** That covers the whole
+wiring — gesture coordinate space (past the header strips and any frozen extent)
+→ intent → reducer → viewport — not just the arithmetic, which
+`FocalZoomTest` already pins across 180 combinations of zoom, focus and scale.
+
+Frozen seams were checked at arbitrary *intermediate* zooms from the same sweep,
+rather than only at the fixed levels T19 used: no gap, no doubled line, and the
+header strips stayed consistent with the freeze throughout.
+
+**What could not be measured this way.** The Samsung A31 is a retail device, so
+`sendevent` on `/dev/input/event2` is denied and a real two-finger pinch cannot
+be injected — `adb shell input` has no multi-touch. Everything above drives the
+same intents through the same reducer and renderer, but the **two-finger centroid
+and spread computation in the gesture loop is not covered on device**; it rests
+on code review and on the double-tap path, whose gesture detection *was* verified
+on hardware. Judge the pinch by hand.
 
 ### Frame times — did T17 cost anything?
 

@@ -46,6 +46,8 @@ public fun ViewerScreen(
     modifier: Modifier = Modifier,
     onScroll: (dx: Float, dy: Float) -> Unit = { _, _ -> },
     onFling: (vx: Float, vy: Float) -> Unit = { _, _ -> },
+    onZoom: (scale: Float, focalX: Float, focalY: Float) -> Unit = { _, _, _ -> },
+    onResetZoom: (focalX: Float, focalY: Float) -> Unit = { _, _ -> },
     onBoundsChanged: (ScrollBounds) -> Unit = {},
     onSelectSheet: (Int) -> Unit = {},
 ) {
@@ -77,6 +79,8 @@ public fun ViewerScreen(
             onOpenFile = onOpenFile,
             onScroll = onScroll,
             onFling = onFling,
+            onZoom = onZoom,
+            onResetZoom = onResetZoom,
             onBoundsChanged = onBoundsChanged,
             onSelectSheet = onSelectSheet,
             modifier = modifier,
