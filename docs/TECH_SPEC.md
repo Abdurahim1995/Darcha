@@ -165,6 +165,7 @@ open, not just until the first parse returns.
 | **`closeDocument()`** | Ends the *session* — closes the workbook, deletes the copy. The repository is **not** shut down: a later `load()` reuses the same instance. |
 | **Ownership** | The repository is **process-scoped** (`DarchaApplication`), never per-Activity. |
 | **Startup sweep** | Orphaned `darcha-*.xlsx` copies from a killed process are deleted at startup. It takes the same lock as `load()`, so it can never delete a copy being written or one in use. |
+| **Where the URI came from** | A SAF pick can be made persistable; an `ACTION_VIEW` grant **cannot**. See below. |
 | **Partial snapshots** | While a sheet streams, the repository accumulates rows *and* layout from the chunks (§7) and emits throttled immutable `SheetSnapshot`s. Each one is already sized correctly, so the grid never re-lays itself out when the parse completes. |
 
 **Why process scope.** Session state outlives the Activity: a rotation destroys the
@@ -172,6 +173,22 @@ Activity while the retained ViewModel keeps reading the same document. An
 Activity-scoped repository produced a *second*, session-less instance on rotation
 whose sweep saw no live file and deleted the one still in use. Process scope removes
 the whole class of bug; per-Activity guards only patch its symptoms.
+
+### URI grants have two different lifetimes (T21)
+
+Darcha has two ways in, and they differ in a way that constrains T22:
+
+| Entry point | Grant | Reopenable later? |
+|---|---|---|
+| SAF picker (`ACTION_OPEN_DOCUMENT`) | `takePersistableUriPermission` succeeds | **Yes** — survives reboots until revoked |
+| `ACTION_VIEW` from a file manager | one-shot, scoped to the receiving task | **No** — the sender never offered `FLAG_GRANT_PERSISTABLE_URI_PERMISSION`, so taking it throws |
+
+**This is a trap for a recent-files list.** A URI that arrived by `ACTION_VIEW`
+looks identical to a picked one and stores just as happily, then fails on every
+tap once the task is gone. T22 must either keep only picker URIs, copy the bytes
+for intent-opened documents, or mark such entries as one-shot and present them
+differently. The note is repeated in `MainActivity.openFromIntent`, where the
+mistake would actually be made.
 
 ### Safety caps (§13)
 

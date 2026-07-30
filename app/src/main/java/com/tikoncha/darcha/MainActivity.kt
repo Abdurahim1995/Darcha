@@ -28,6 +28,10 @@ import kotlinx.coroutines.launch
  *
  * The ViewModel is retained by the activity's `ViewModelStore`, so a rotation
  * re-renders from the state already in memory and never re-parses.
+ *
+ * Two ways in, and they are different code paths: the in-app SAF picker, and an
+ * `ACTION_VIEW` from a file manager (T21) — including a **cold start**, where
+ * the intent is the first thing that happens to the process.
  */
 class MainActivity : ComponentActivity() {
 
@@ -47,6 +51,11 @@ class MainActivity : ComponentActivity() {
         // runs against the process-wide repository, which excludes the open
         // document's copy and waits for any load still in flight.
         lifecycleScope.launch { repository.sweepStaleTempFiles() }
+
+        // Only on a genuine start. A rotation re-runs onCreate with the same
+        // intent, and the ViewModel has survived it — re-dispatching would
+        // re-parse a document that is already on screen.
+        if (savedInstanceState == null) openFromIntent(intent)
 
         setContent {
             MaterialTheme {
@@ -92,7 +101,48 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * A file manager sending a second document while Darcha is already running.
+     * Without this the new intent would be delivered and ignored, leaving the
+     * previous document on screen.
+     */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        openFromIntent(intent)
+    }
+
+    /**
+     * Open the document an `ACTION_VIEW` points at, if there is one.
+     *
+     * Nothing here decides whether the file is really a workbook: the filters
+     * that make Darcha visible are deliberately loose (see the manifest), so
+     * anything can arrive. It goes through the same pipeline as a picked file
+     * and comes out as a `ViewerState.Error` if it is not readable — which is
+     * why this method must not throw for a bad URI. Building the source queries
+     * the provider, and a provider is free to refuse.
+     */
+    private fun openFromIntent(intent: Intent?) {
+        if (intent?.action != Intent.ACTION_VIEW) return
+        val uri = intent.data ?: return
+
+        // NOTE FOR T22 (recents): an ACTION_VIEW grant is ONE-SHOT. It lives as
+        // long as this task and cannot be promoted — takePersistableUriPermission
+        // throws SecurityException here, unlike a SAF pick, because the sender
+        // never offered FLAG_GRANT_PERSISTABLE_URI_PERMISSION. So a URI that
+        // arrived this way must NOT be stored as a reopenable recent: it would
+        // look fine in the list and fail on every tap. Recents can hold picker
+        // URIs; for intent URIs it needs the file copied, or the entry marked
+        // one-shot and shown differently.
+        Log.d(LOG_TAG, "ACTION_VIEW ${intent.type} $uri")
+        viewModel.dispatch(
+            ViewerIntent.OpenFile(ContentUriSource.from(contentResolver, uri)),
+        )
+    }
+
     private companion object {
+        const val LOG_TAG = "Darcha.Intent"
+
         /**
          * MIME filter for the picker. The official spreadsheet type comes first;
          * `application/octet-stream` is included because many providers report

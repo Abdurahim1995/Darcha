@@ -19,6 +19,78 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
+            <!--
+                Opening .xlsx from a file manager (T21).
+
+                The first filter is the correct one: a provider that knows what
+                an .xlsx is reports the OOXML spreadsheet type and no guessing is
+                needed. The two schemes are the only ones that ever carry a
+                document; a mimeType alone would imply them, but saying so
+                explicitly is what tells lint this is a document filter and not a
+                half-written app link.
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:mimeType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
+            </intent-filter>
+
+            <!--
+                Fallback for providers that do not know the type and report
+                application/octet-stream — common enough that without it Darcha
+                does not appear at all for some file managers.
+
+                LIMITS OF THIS PATTERN, so nobody expects more of it than it can
+                give:
+
+                * pathPattern matches the URI's PATH, not the file name. A SAF
+                  document URI is often .../document/1234 — an opaque id with no
+                  extension anywhere in it — and then this filter cannot match,
+                  whatever the file is really called. It works for providers
+                  whose path keeps the name (…/document/primary%3ADownload%2Fx.xlsx)
+                  and for the file: URIs older managers still send.
+                * Android's pathPattern has no backtracking, so a leading `.*`
+                  swallows a later literal and `.*\\.xlsx` fails on a path with an
+                  earlier dot in it. The extra patterns cover one and two such
+                  dots, which is as far as this is worth taking.
+                * The consequence runs the other way too: Darcha is offered for
+                  any octet-stream file whose path ends in .xlsx, and under the
+                  wildcard filter below, for any type at all. Something that is
+                  not a workbook therefore does reach the app, and has to land on
+                  the error screen rather than crash — see
+                  MainActivity.openFromIntent.
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:host="*" />
+                <data android:mimeType="application/octet-stream" />
+                <data android:pathPattern=".*\\.xlsx" />
+                <data android:pathPattern=".*\\..*\\.xlsx" />
+                <data android:pathPattern=".*\\..*\\..*\\.xlsx" />
+            </intent-filter>
+
+            <!--
+                Last resort: any MIME type, still gated on an .xlsx path. Covers
+                providers that report something else entirely — application/zip
+                and application/vnd.ms-excel both turn up in the wild for .xlsx.
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:host="*" />
+                <data android:mimeType="*/*" />
+                <data android:pathPattern=".*\\.xlsx" />
+                <data android:pathPattern=".*\\..*\\.xlsx" />
+                <data android:pathPattern=".*\\..*\\..*\\.xlsx" />
+            </intent-filter>
         </activity>
     </application>
 

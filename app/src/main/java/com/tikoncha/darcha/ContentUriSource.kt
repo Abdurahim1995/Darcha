@@ -21,8 +21,24 @@ internal class ContentUriSource(
     override val declaredSizeBytes: Long?,
 ) : WorkbookSource {
 
-    override fun openStream(): InputStream =
+    /**
+     * Open the document's bytes.
+     *
+     * A provider may refuse — an `ACTION_VIEW` grant dies with the task that
+     * received it, so a URI re-read after process death throws `SecurityException`
+     * rather than returning null. That is mapped to [IOException] because the
+     * loading pipeline's contract is that a source fails with one, and a
+     * `SecurityException` escaping onto a background dispatcher would take the
+     * process down instead of reaching the error screen.
+     */
+    override fun openStream(): InputStream = try {
         resolver.openInputStream(uri) ?: throw IOException("provider returned no stream for $uri")
+    } catch (e: SecurityException) {
+        throw IOException("no permission to read $uri", e)
+    } catch (e: IllegalArgumentException) {
+        // Some providers throw this for an unknown document id.
+        throw IOException("provider rejected $uri", e)
+    }
 
     internal companion object {
 
@@ -32,17 +48,25 @@ internal class ContentUriSource(
          * Both are best-effort: a provider may return neither. The size is only a
          * hint for an early rejection — the repository counts bytes as it copies,
          * so a missing or wrong value cannot defeat the cap.
+         *
+         * **Never throws.** This runs on the main thread the moment an
+         * `ACTION_VIEW` arrives (T21), and the query is a call into another app's
+         * provider: it can refuse, or reject the document id outright. A failure
+         * here only costs the name and the size hint — the load then fails
+         * properly, on its own dispatcher, and lands on the error screen.
          */
         fun from(resolver: ContentResolver, uri: Uri): ContentUriSource {
             var name: String? = null
             var size: Long? = null
             val columns = arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE)
-            resolver.query(uri, columns, null, null, null)?.use { cursor ->
-                if (cursor.moveToFirst()) {
-                    val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                    if (nameIndex >= 0 && !cursor.isNull(nameIndex)) name = cursor.getString(nameIndex)
-                    val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
-                    if (sizeIndex >= 0 && !cursor.isNull(sizeIndex)) size = cursor.getLong(sizeIndex)
+            runCatching {
+                resolver.query(uri, columns, null, null, null)?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                        if (nameIndex >= 0 && !cursor.isNull(nameIndex)) name = cursor.getString(nameIndex)
+                        val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
+                        if (sizeIndex >= 0 && !cursor.isNull(sizeIndex)) size = cursor.getLong(sizeIndex)
+                    }
                 }
             }
             return ContentUriSource(

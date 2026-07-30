@@ -52,7 +52,9 @@ Prerequisites in repo: `CLAUDE.md` (root), `docs/TECH_SPEC.md`, this file.
 > **M3 exit criteria — met.** The grid now renders what the file actually says: formatted values, cell styles, merged ranges, frozen panes, and zoom.
 
 **M4 — Product polish**
-- [ ] T21 ACTION_VIEW · [ ] T22 Recent files · [ ] T23 Error UI · [ ] T24 Icon+theme+UZ · 🧑 OWNER: GIFs · [ ] T25 README+metrics · 🧑 OWNER: keystore · [ ] T26 Release v1.0
+- [x] T21 ACTION_VIEW · [ ] T22 Recent files · [ ] T23 Error UI · [ ] T24 Icon+theme+UZ · 🧑 OWNER: GIFs · [ ] T25 README+metrics · 🧑 OWNER: keystore · [ ] T26 Release v1.0
+
+> **T21 — DONE.** Darcha opens `.xlsx` from a file manager, cold start included. Verified on both managers the A31 has — system Files and Samsung My Files — and both reported the correct OOXML MIME, so the octet-stream/wildcard fallback never fired; neither URI contained `.xlsx` anywhere, which is exactly the pathPattern limit the manifest documents. A garbage file with an `.xlsx` name lands on the error screen from a cold start, no crash. **`ACTION_VIEW` grants are one-shot** — recorded in §9.1 and in the code, so T22 does not store URIs it can never reopen.
 
 ---
 
