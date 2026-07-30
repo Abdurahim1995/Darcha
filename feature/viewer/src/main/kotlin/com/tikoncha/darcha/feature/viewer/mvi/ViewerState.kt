@@ -76,6 +76,8 @@ public sealed interface ViewerState {
      * @property activeSheetId index into [DocumentMeta.sheetNames].
      * @property viewport current scroll/zoom.
      * @property selection the selected cell, or `null` if nothing is selected.
+     * @property scrollBounds how far the viewport may scroll, published by the
+     *   renderer once it knows the sheet's used range at this density (§9.2).
      */
     public data class Ready(
         public val docMeta: DocumentMeta,
@@ -83,6 +85,7 @@ public sealed interface ViewerState {
         public val activeSheetId: Int,
         public val viewport: Viewport,
         public val selection: CellRef?,
+        public val scrollBounds: ScrollBounds = ScrollBounds.UNKNOWN,
     ) : ViewerState
 
     /**

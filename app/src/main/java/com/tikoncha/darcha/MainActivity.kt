@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -50,7 +49,9 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             MaterialTheme {
-                val state by viewModel.state.collectAsState()
+                // Held, not read: passing the holder down lets the grid observe
+                // viewport changes in its draw phase instead of recomposing here.
+                val state = viewModel.state.collectAsState()
 
                 val picker = rememberLauncherForActivityResult(
                     ActivityResultContracts.OpenDocument(),
@@ -75,7 +76,9 @@ class MainActivity : ComponentActivity() {
                         onOpenFile = { picker.launch(OPEN_DOCUMENT_MIME_TYPES) },
                         onRetry = { viewModel.dispatch(ViewerIntent.Retry) },
                         onScroll = { dx, dy -> viewModel.dispatch(ViewerIntent.Scroll(dx, dy)) },
+                        onFling = { vx, vy -> viewModel.dispatch(ViewerIntent.Fling(vx, vy)) },
                         onZoom = { scale -> viewModel.dispatch(ViewerIntent.Zoom(scale, 0f, 0f)) },
+                        onBoundsChanged = { viewModel.onScrollBoundsChanged(it) },
                     )
                 }
             }

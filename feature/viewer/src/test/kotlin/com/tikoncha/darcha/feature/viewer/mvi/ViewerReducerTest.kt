@@ -30,7 +30,8 @@ class ViewerReducerTest {
         activeSheetId: Int = 0,
         viewport: Viewport = Viewport.INITIAL,
         selection: CellRef? = null,
-    ) = ViewerState.Ready(meta, SheetSnapshot.EMPTY, activeSheetId, viewport, selection)
+        scrollBounds: ScrollBounds = ScrollBounds.UNKNOWN,
+    ) = ViewerState.Ready(meta, SheetSnapshot.EMPTY, activeSheetId, viewport, selection, scrollBounds)
 
     // --- the happy path: open -> parsing -> ready ---
 
@@ -179,12 +180,68 @@ class ViewerReducerTest {
         assertEquals(200f, next.viewport.scrollY, 0f)
     }
 
+    // --- scroll bounds (T14) ---
+
+    @Test
+    fun scroll_clampsAtTheContentEdge() {
+        val bounded = ready(scrollBounds = ScrollBounds(maxScrollX = 200f, maxScrollY = 500f))
+        val next = reduce(bounded, ViewerIntent.Scroll(dx = 9_000f, dy = 9_000f)) as ViewerState.Ready
+        assertEquals(200f, next.viewport.scrollX, 0f)
+        assertEquals(500f, next.viewport.scrollY, 0f)
+    }
+
+    @Test
+    fun scroll_withinBounds_isUntouched() {
+        val bounded = ready(scrollBounds = ScrollBounds(maxScrollX = 200f, maxScrollY = 500f))
+        val next = reduce(bounded, ViewerIntent.Scroll(dx = 50f, dy = 60f)) as ViewerState.Ready
+        assertEquals(50f, next.viewport.scrollX, 0f)
+        assertEquals(60f, next.viewport.scrollY, 0f)
+    }
+
+    @Test
+    fun boundsChanged_isRecordedAndReClampsTheViewport() {
+        // A viewport parked deep in a big sheet must not hang past the end when a
+        // smaller sheet's bounds arrive.
+        val scrolled = ready(viewport = Viewport(scrollX = 5_000f, scrollY = 8_000f))
+        val next = reduce(
+            scrolled,
+            RenderEvent.BoundsChanged(ScrollBounds(maxScrollX = 100f, maxScrollY = 120f)),
+        ) as ViewerState.Ready
+
+        assertEquals(ScrollBounds(100f, 120f), next.scrollBounds)
+        assertEquals(100f, next.viewport.scrollX, 0f)
+        assertEquals(120f, next.viewport.scrollY, 0f)
+    }
+
+    @Test
+    fun boundsChanged_beforeReady_isIgnored() {
+        val event = RenderEvent.BoundsChanged(ScrollBounds(10f, 10f))
+        assertSame(ViewerState.Idle, reduce(ViewerState.Idle, event))
+    }
+
+    @Test
+    fun negativeBounds_collapseToTheOrigin() {
+        // A sheet narrower than the viewport has nothing to scroll.
+        val bounded = ready(scrollBounds = ScrollBounds(maxScrollX = -50f, maxScrollY = -50f))
+        val next = reduce(bounded, ViewerIntent.Scroll(dx = 100f, dy = 100f)) as ViewerState.Ready
+        assertEquals(Viewport.INITIAL, next.viewport)
+    }
+
+    // --- fling ---
+
+    @Test
+    fun fling_leavesStateToTheViewModel() {
+        // The reducer sees only the Scroll intents the decay produces, so a Fling
+        // itself must not move anything.
+        val readyState = ready()
+        assertSame(readyState, reduce(readyState, ViewerIntent.Fling(vx = 2_000f, vy = -800f)))
+    }
+
     // --- intents deferred to later tasks ---
 
     @Test
-    fun flingAndTap_leaveStateUnchangedForNow() {
+    fun tap_leavesStateUnchangedForNow() {
         val readyState = ready()
-        assertSame(readyState, reduce(readyState, ViewerIntent.Fling(vx = 800f, vy = 0f)))
         assertSame(readyState, reduce(readyState, ViewerIntent.TapCell(x = 10f, y = 20f)))
     }
 

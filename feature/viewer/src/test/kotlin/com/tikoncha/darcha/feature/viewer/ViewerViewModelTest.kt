@@ -14,6 +14,8 @@ import androidx.lifecycle.ViewModelStore
 import com.tikoncha.darcha.model.ErrorKind
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -150,6 +152,50 @@ class ViewerViewModelTest {
         val state = vm.state.value as ViewerState.Ready
         assertEquals(1, state.activeSheetId)
         assertEquals(Viewport.INITIAL, state.viewport)
+    }
+
+    // --- fling (T14) ---
+
+    @Test
+    fun fling_startsMovingImmediately() {
+        // The decay runs in the ViewModel, so the first frame lands before any
+        // delay — on Unconfined that is synchronous with the dispatch.
+        val vm = viewModel(FakeRepository(WorkbookLoad.Success(meta, SheetSnapshot.EMPTY)))
+        vm.dispatch(ViewerIntent.OpenFile(source))
+
+        vm.dispatch(ViewerIntent.Fling(vx = 1_000f, vy = 0f))
+
+        val viewport = (vm.state.value as ViewerState.Ready).viewport
+        assertTrue("expected the glide to have begun, got ${viewport.scrollX}", viewport.scrollX > 0f)
+    }
+
+    @Test
+    fun fling_belowTheThreshold_doesNothing() {
+        val vm = viewModel(FakeRepository(WorkbookLoad.Success(meta, SheetSnapshot.EMPTY)))
+        vm.dispatch(ViewerIntent.OpenFile(source))
+
+        vm.dispatch(ViewerIntent.Fling(vx = 5f, vy = 5f))
+
+        assertEquals(Viewport.INITIAL, (vm.state.value as ViewerState.Ready).viewport)
+    }
+
+    @Test
+    fun aNewScroll_cancelsAnInFlightFling() = runBlocking {
+        // A finger going down mid-glide must take over, not fight the decay.
+        val vm = viewModel(FakeRepository(WorkbookLoad.Success(meta, SheetSnapshot.EMPTY)))
+        vm.dispatch(ViewerIntent.OpenFile(source))
+        vm.dispatch(ViewerIntent.Fling(vx = 3_000f, vy = 0f))
+
+        vm.dispatch(ViewerIntent.Scroll(dx = 0f, dy = 0f))
+        val parked = (vm.state.value as ViewerState.Ready).viewport.scrollX
+
+        delay(120) // several frames' worth
+        assertEquals(
+            "the glide must not have continued",
+            parked,
+            (vm.state.value as ViewerState.Ready).viewport.scrollX,
+            0f,
+        )
     }
 
     @Test

@@ -2,7 +2,9 @@ package com.tikoncha.darcha.feature.viewer.ui
 
 import android.util.Log
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -10,6 +12,8 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
@@ -19,7 +23,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tikoncha.darcha.feature.viewer.geometry.GridGeometry
 import com.tikoncha.darcha.feature.viewer.geometry.VisibleRange
-import com.tikoncha.darcha.feature.viewer.mvi.ViewerState
+import com.tikoncha.darcha.feature.viewer.data.SheetSnapshot
+import com.tikoncha.darcha.feature.viewer.mvi.ScrollBounds
 import com.tikoncha.darcha.feature.viewer.mvi.Viewport
 import com.tikoncha.darcha.model.DEFAULT_MAX_DIGIT_WIDTH
 import com.tikoncha.darcha.model.SheetData
@@ -43,16 +48,20 @@ import kotlin.math.roundToInt
  */
 @Composable
 public fun GridCanvas(
-    state: ViewerState.Ready,
+    sheet: SheetSnapshot,
+    viewport: () -> Viewport,
+    onScroll: (dx: Float, dy: Float) -> Unit,
+    onFling: (vx: Float, vy: Float) -> Unit,
+    onBoundsChanged: (ScrollBounds) -> Unit,
     modifier: Modifier = Modifier,
     onDrawnCells: (Int) -> Unit = {},
 ) {
     val density = LocalDensity.current.density
-    val layout = state.sheet.layout
+    val layout = sheet.layout
 
     // Geometry is built in *physical* pixels by folding the display density into
     // its two unit converters, so its output can be used as Canvas coordinates
-    // directly. Its own arithmetic stays device-independent (TECH_SPEC §9).
+    // directly. Its own arithmetic stays device-independent (TECH_SPEC §9.2).
     val geometry = remember(layout, density) {
         GridGeometry(
             layout = layout,
@@ -67,17 +76,53 @@ public fun GridCanvas(
     val rowHeaderWidth = with(LocalDensity.current) { ROW_HEADER_WIDTH.toPx() }
     val columnHeaderHeight = with(LocalDensity.current) { COLUMN_HEADER_HEIGHT.toPx() }
 
-    Canvas(modifier = modifier) {
+    // How far this sheet can scroll. Computed once per sheet — the full grid is
+    // 16k x 1M, so the *used* range is what makes scrolling feel finite.
+    val used = remember(sheet.data) { sheet.data.usedBounds() }
+    LaunchedEffect(geometry, used) {
+        onBoundsChanged(
+            ScrollBounds(
+                maxScrollX = geometry.columnOffset(used.lastColumn),
+                maxScrollY = geometry.rowOffset(used.lastRow),
+            ),
+        )
+    }
+
+    val gestures = Modifier.pointerInput(geometry) {
+        val tracker = VelocityTracker()
+        detectDragGestures(
+            onDragStart = { tracker.resetTracking() },
+            onDragCancel = { tracker.resetTracking() },
+            onDragEnd = {
+                val velocity = tracker.calculateVelocity()
+                val zoom = viewport().zoom
+                // Screen px/s -> content px/s, and inverted: flicking left sends
+                // the viewport right (TECH_SPEC §9.2).
+                onFling(-velocity.x / zoom, -velocity.y / zoom)
+            },
+            onDrag = { change, dragAmount ->
+                change.consume()
+                tracker.addPosition(change.uptimeMillis, change.position)
+                val zoom = viewport().zoom
+                onScroll(-dragAmount.x / zoom, -dragAmount.y / zoom)
+            },
+        )
+    }
+
+    Canvas(modifier = modifier.then(gestures)) {
+        // Read inside the draw block: a viewport change then invalidates only the
+        // draw phase, never recomposing the surrounding chrome.
+        val current = viewport()
         val bodyWidth = (size.width - rowHeaderWidth).coerceAtLeast(0f)
         val bodyHeight = (size.height - columnHeaderHeight).coerceAtLeast(0f)
-        val range = geometry.visibleRange(state.viewport, bodyWidth, bodyHeight)
+        val range = geometry.visibleRange(current, bodyWidth, bodyHeight)
 
         drawBody(
             range = range,
             geometry = geometry,
-            viewport = state.viewport,
-            sheetData = state.sheet.data,
-            strings = state.sheet.sharedStrings,
+            viewport = current,
+            sheetData = sheet.data,
+            strings = sheet.sharedStrings,
             originX = rowHeaderWidth,
             originY = columnHeaderHeight,
             textMeasurer = textMeasurer,
@@ -86,7 +131,7 @@ public fun GridCanvas(
         drawHeaders(
             range = range,
             geometry = geometry,
-            viewport = state.viewport,
+            viewport = current,
             rowHeaderWidth = rowHeaderWidth,
             columnHeaderHeight = columnHeaderHeight,
             textMeasurer = textMeasurer,
@@ -225,11 +270,12 @@ private fun DrawScope.drawCellText(
     color: Color,
 ) {
     if (width <= 0f || height <= 0f) return
-    val style = TextStyle(fontSize = CELL_FONT_SIZE * zoom, color = color)
+    // TextStyle is built inside the lambda so a cache hit — the common case —
+    // allocates nothing on the per-cell hot path.
     val layoutResult = cache.get(text, zoom) {
         textMeasurer.measure(
             text = text,
-            style = style,
+            style = TextStyle(fontSize = CELL_FONT_SIZE * zoom, color = color),
             maxLines = 1,
             softWrap = false,
             // Unbounded on purpose: the layout is measured once at its natural
@@ -263,3 +309,24 @@ private val GRID_LINE = Color(0xFFD0D0D0)
 private val CELL_TEXT = Color(0xFF202020)
 private val HEADER_FILL = Color(0xFFF2F2F2)
 private val HEADER_TEXT = Color(0xFF606060)
+
+/** The last populated row and column of a sheet. */
+internal data class UsedBounds(val lastRow: Int, val lastColumn: Int)
+
+/**
+ * Find the sheet's used range — one pass over the sparse rows, done once per
+ * sheet rather than per frame. Columns within a row are sorted, so the last
+ * entry is the rightmost.
+ */
+internal fun SheetData.usedBounds(): UsedBounds {
+    var lastRow = 0
+    var lastColumn = 0
+    for ((row, cells) in rows) {
+        if (row > lastRow) lastRow = row
+        if (cells.size > 0) {
+            val rightmost = cells.columns[cells.size - 1]
+            if (rightmost > lastColumn) lastColumn = rightmost
+        }
+    }
+    return UsedBounds(lastRow, lastColumn)
+}

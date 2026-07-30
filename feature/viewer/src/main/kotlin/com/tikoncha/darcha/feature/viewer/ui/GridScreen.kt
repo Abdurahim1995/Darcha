@@ -12,6 +12,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
@@ -19,26 +20,36 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.tikoncha.darcha.feature.viewer.mvi.ViewerState
+import com.tikoncha.darcha.feature.viewer.data.SheetSnapshot
+import com.tikoncha.darcha.feature.viewer.mvi.DocumentMeta
+import com.tikoncha.darcha.feature.viewer.mvi.ScrollBounds
+import com.tikoncha.darcha.feature.viewer.mvi.Viewport
 
 /**
- * The T13 grid screen: a header line, the [GridCanvas], and temporary debug
- * controls that move the viewport.
+ * The grid screen: a header line, the [GridCanvas], and temporary debug controls.
  *
- * The controls exist only to exercise culling before gestures arrive in T14 —
- * they dispatch the same `Scroll` and `Zoom` intents a drag eventually will, so
- * the flow stays unidirectional (TECH_SPEC §10).
+ * Nothing here reads the viewport during composition. [viewport] is a lambda the
+ * Canvas calls inside its draw block, so dragging invalidates the draw phase
+ * only — the title, the buttons and the layout are never recomposed while
+ * scrolling. The one intentional exception is [ViewportReadout], isolated in its
+ * own composable so it recomposes alone.
+ *
+ * The debug buttons dispatch the same `Scroll` / `Zoom` intents the gestures do;
+ * they stay until T15 as an A/B reference while the fling is tuned.
  */
 @Composable
 internal fun GridScreen(
-    state: ViewerState.Ready,
+    sheet: SheetSnapshot,
+    docMeta: DocumentMeta,
+    viewport: () -> Viewport,
     onOpenFile: () -> Unit,
     onScroll: (dx: Float, dy: Float) -> Unit,
+    onFling: (vx: Float, vy: Float) -> Unit,
     onZoom: (scale: Float) -> Unit,
+    onBoundsChanged: (ScrollBounds) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var drawnCells by remember { mutableIntStateOf(0) }
-    val viewport = state.viewport
 
     // Keep the chrome clear of the status and navigation bars.
     Column(modifier = modifier.fillMaxSize().systemBarsPadding()) {
@@ -49,10 +60,10 @@ internal fun GridScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(state.docMeta.displayName, style = MaterialTheme.typography.titleSmall)
+                Text(docMeta.displayName, style = MaterialTheme.typography.titleSmall)
                 Text(
-                    text = "${state.docMeta.rowCount} rows · " +
-                        "${state.docMeta.sheetNames.size} sheets · drawn $drawnCells cells",
+                    text = "${docMeta.rowCount} rows · ${docMeta.sheetNames.size} sheets · " +
+                        "drawn $drawnCells cells",
                     style = MaterialTheme.typography.labelSmall,
                 )
             }
@@ -60,14 +71,18 @@ internal fun GridScreen(
         }
 
         GridCanvas(
-            state = state,
+            sheet = sheet,
+            viewport = viewport,
+            onScroll = onScroll,
+            onFling = onFling,
+            onBoundsChanged = onBoundsChanged,
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f),
             onDrawnCells = { drawnCells = it },
         )
 
-        // Debug viewport controls — replaced by real gestures in T14.
+        // Debug viewport controls — an A/B reference for the gestures, removed in T15.
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -82,13 +97,24 @@ internal fun GridScreen(
             OutlinedButton(onClick = { onZoom(1 / ZOOM_STEP) }) { Text("−") }
             OutlinedButton(onClick = { onZoom(ZOOM_STEP) }) { Text("+") }
         }
-        Text(
-            text = "x=${viewport.scrollX.toInt()} y=${viewport.scrollY.toInt()} " +
-                "zoom=${"%.1f".format(viewport.zoom)}",
-            style = MaterialTheme.typography.labelSmall,
-            modifier = Modifier.padding(start = 12.dp, bottom = 8.dp),
-        )
+        ViewportReadout(viewport)
     }
+}
+
+/**
+ * The live scroll/zoom numbers. Split out because showing them *requires*
+ * reading the viewport during composition; keeping that read here means this
+ * one line recomposes while scrolling, and nothing else does.
+ */
+@Composable
+private fun ViewportReadout(viewport: () -> Viewport) {
+    val current = viewport()
+    Text(
+        text = "x=${current.scrollX.toInt()} y=${current.scrollY.toInt()} " +
+            "zoom=${"%.1f".format(current.zoom)}",
+        style = MaterialTheme.typography.labelSmall,
+        modifier = Modifier.padding(start = 12.dp, bottom = 8.dp),
+    )
 }
 
 /** Content pixels moved per debug step — roughly two default columns. */
@@ -96,3 +122,6 @@ private const val STEP = 128f
 
 /** Multiplier per zoom step. */
 private const val ZOOM_STEP = 1.25f
+
+/** Convenience for reading a state holder without recomposing on every change. */
+internal inline fun <T> State<T>.read(): T = value

@@ -70,3 +70,14 @@ public sealed interface ParseEvent : ViewerEvent {
     /** The document failed to load. */
     public data class Failed(public val kind: ErrorKind) : ParseEvent
 }
+
+/**
+ * An event from the renderer. The Canvas is the only place that knows the
+ * display density and the sheet's measured extent, so it reports what the
+ * reducer cannot work out on its own.
+ */
+public sealed interface RenderEvent : ViewerEvent {
+
+    /** The scrollable extent changed — a new sheet, or a new density. */
+    public data class BoundsChanged(public val bounds: ScrollBounds) : RenderEvent
+}

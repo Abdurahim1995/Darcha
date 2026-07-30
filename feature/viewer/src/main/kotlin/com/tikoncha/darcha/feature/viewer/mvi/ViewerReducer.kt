@@ -16,6 +16,7 @@ public object ViewerReducer {
     public fun reduce(state: ViewerState, event: ViewerEvent): ViewerState = when (event) {
         is ViewerIntent -> reduceIntent(state, event)
         is ParseEvent -> reduceParse(state, event)
+        is RenderEvent -> reduceRender(state, event)
     }
 
     private fun reduceIntent(state: ViewerState, intent: ViewerIntent): ViewerState =
@@ -44,7 +45,9 @@ public object ViewerReducer {
             }
 
             is ViewerIntent.Scroll -> state.mapReady { ready ->
-                ready.copy(viewport = ready.viewport.scrolledBy(intent.dx, intent.dy))
+                ready.copy(
+                    viewport = ready.viewport.scrolledBy(intent.dx, intent.dy, ready.scrollBounds),
+                )
             }
 
             is ViewerIntent.Zoom -> state.mapReady { ready ->
@@ -53,9 +56,12 @@ public object ViewerReducer {
                 ready.copy(viewport = ready.viewport.zoomedBy(intent.scale))
             }
 
-            // Fling physics is resolved in T14 and cell hit-testing needs the
-            // geometry engine from T12; until then both leave state untouched.
+            // A fling is a *request* to keep moving: the ViewModel owns the decay
+            // and feeds it back as ordinary Scroll intents, so the reducer sees
+            // nothing new and the state stays a pure function of the events.
             is ViewerIntent.Fling -> state
+
+            // Cell hit-testing needs the renderer's geometry; T20 wires it up.
             is ViewerIntent.TapCell -> state
         }
 
@@ -87,6 +93,19 @@ public object ViewerReducer {
                 if (state is ViewerState.Parsing) ViewerState.Error(event.kind) else state
         }
 
+    private fun reduceRender(state: ViewerState, event: RenderEvent): ViewerState =
+        when (event) {
+            is RenderEvent.BoundsChanged -> state.mapReady { ready ->
+                // Re-clamp at once: a smaller sheet can leave the viewport past
+                // the new limit, which would otherwise show blank space until the
+                // next scroll.
+                ready.copy(
+                    scrollBounds = event.bounds,
+                    viewport = ready.viewport.scrolledBy(0f, 0f, event.bounds),
+                )
+            }
+        }
+
     /** Apply [block] only when the viewer is [ViewerState.Ready]. */
     private inline fun ViewerState.mapReady(
         block: (ViewerState.Ready) -> ViewerState,
@@ -94,12 +113,14 @@ public object ViewerReducer {
 }
 
 /**
- * Scroll by ([dx], [dy]), clamped so offsets never go negative. The upper bound
- * needs content dimensions from the geometry engine and lands in T12.
+ * Scroll by ([dx], [dy]) content pixels, clamped to `0..bounds` on each axis.
+ *
+ * Deltas arrive already converted from screen to content pixels — the caller
+ * divides by zoom, per TECH_SPEC §9.2.
  */
-internal fun Viewport.scrolledBy(dx: Float, dy: Float): Viewport = copy(
-    scrollX = (scrollX + dx).coerceAtLeast(0f),
-    scrollY = (scrollY + dy).coerceAtLeast(0f),
+internal fun Viewport.scrolledBy(dx: Float, dy: Float, bounds: ScrollBounds): Viewport = copy(
+    scrollX = (scrollX + dx).coerceIn(0f, bounds.maxScrollX.coerceAtLeast(0f)),
+    scrollY = (scrollY + dy).coerceIn(0f, bounds.maxScrollY.coerceAtLeast(0f)),
 )
 
 /** Multiply the zoom by [scale], clamped to the allowed range. */
