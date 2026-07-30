@@ -112,11 +112,18 @@ public fun GridCanvas(
     // What a merged span paints over the gridlines it hides, when its anchor
     // carries no fill of its own.
     val surface = MaterialTheme.colorScheme.surface
-    val formatted = remember(sheet.styles, sheet.sharedStrings, sheet.date1904) {
+
+    // The grid's own palette: gridlines, header strips and the freeze marker all
+    // change with the theme, or dark mode stops at the edge of the sheet (T24).
+    val colors = gridColors
+    // Locale lives here, not in the formatter (T16/T24) — see rememberDateNames.
+    val dateNames = rememberDateNames()
+    val formatted = remember(sheet.styles, sheet.sharedStrings, sheet.date1904, dateNames) {
         FormattedValueCache(
             styles = sheet.styles,
             strings = sheet.sharedStrings,
             date1904 = sheet.date1904,
+            names = dateNames,
         )
     }
 
@@ -236,12 +243,14 @@ public fun GridCanvas(
                 formatted = formatted,
                 merges = merges,
                 surface = surface,
+                colors = colors,
                 textMeasurer = textMeasurer,
                 cache = textCache,
             )
         }
 
         drawHeaders(
+            colors = colors,
             regions = regions,
             geometry = geometry,
             rowHeaderWidth = rowHeaderWidth,
@@ -254,6 +263,7 @@ public fun GridCanvas(
         // split was positioned from the same Float this line uses, so the line
         // lands exactly on the seam instead of near it.
         drawFreezeSeparators(
+            colors = colors,
             panes = panes,
             viewport = current,
             originX = rowHeaderWidth,
@@ -302,6 +312,7 @@ private fun DrawScope.drawRegion(
     formatted: FormattedValueCache,
     merges: MergeIndex,
     surface: Color,
+    colors: GridColors,
     textMeasurer: TextMeasurer,
     cache: CellTextCache<TextLayoutResult>,
 ) {
@@ -344,13 +355,13 @@ private fun DrawScope.drawRegion(
         for (column in region.firstColumn..region.lastColumn + 1) {
             val x = originX + geometry.screenXOf(column, viewport)
             if (x in region.left..region.right) {
-                drawLine(GRID_LINE, Offset(x, region.top), Offset(x, region.bottom), GRID_STROKE)
+                drawLine(colors.gridLine, Offset(x, region.top), Offset(x, region.bottom), GRID_STROKE)
             }
         }
         for (row in region.firstRow..region.lastRow + 1) {
             val y = originY + geometry.screenYOf(row, viewport)
             if (y in region.top..region.bottom) {
-                drawLine(GRID_LINE, Offset(region.left, y), Offset(region.right, y), GRID_STROKE)
+                drawLine(colors.gridLine, Offset(region.left, y), Offset(region.right, y), GRID_STROKE)
             }
         }
 
@@ -374,7 +385,7 @@ private fun DrawScope.drawRegion(
                     ?: surface
                 drawRect(color = fill, topLeft = Offset(left, top), size = Size(width, height))
                 drawRect(
-                    color = GRID_LINE,
+                    color = colors.gridLine,
                     topLeft = Offset(left, top),
                     size = Size(width, height),
                     style = Stroke(width = GRID_STROKE),
@@ -423,7 +434,7 @@ private fun DrawScope.drawRegion(
                     zoom = viewport.zoom,
                     textMeasurer = textMeasurer,
                     cache = cache,
-                    color = style.fontColor?.toCompose() ?: CELL_TEXT,
+                    color = cellTextColor(style, colors),
                     weight = style.fontWeight,
                     italic = style.fontStyle,
                     align = style.resolveAlignment(value),
@@ -446,6 +457,7 @@ private fun DrawScope.drawRegion(
  * neighbouring pixel.
  */
 private fun DrawScope.drawFreezeSeparators(
+    colors: GridColors,
     panes: PaneRegions,
     viewport: Viewport,
     originX: Float,
@@ -456,10 +468,10 @@ private fun DrawScope.drawFreezeSeparators(
     val splitY = (originY + panes.frozenHeight(viewport)).coerceIn(originY, size.height)
 
     if (panes.minScrollX > 0f && splitX < size.width) {
-        drawLine(FREEZE_LINE, Offset(splitX, 0f), Offset(splitX, size.height), FREEZE_STROKE)
+        drawLine(colors.freezeLine, Offset(splitX, 0f), Offset(splitX, size.height), FREEZE_STROKE)
     }
     if (panes.minScrollY > 0f && splitY < size.height) {
-        drawLine(FREEZE_LINE, Offset(0f, splitY), Offset(size.width, splitY), FREEZE_STROKE)
+        drawLine(colors.freezeLine, Offset(0f, splitY), Offset(size.width, splitY), FREEZE_STROKE)
     }
 }
 
@@ -473,6 +485,7 @@ private fun DrawScope.drawFreezeSeparators(
  * can never disagree with the cells beneath it.
  */
 private fun DrawScope.drawHeaders(
+    colors: GridColors,
     regions: List<PaneRegion>,
     geometry: GridGeometry,
     rowHeaderWidth: Float,
@@ -480,8 +493,8 @@ private fun DrawScope.drawHeaders(
     textMeasurer: TextMeasurer,
     cache: CellTextCache<TextLayoutResult>,
 ) {
-    drawRect(HEADER_FILL, Offset.Zero, Size(size.width, columnHeaderHeight))
-    drawRect(HEADER_FILL, Offset.Zero, Size(rowHeaderWidth, size.height))
+    drawRect(colors.headerFill, Offset.Zero, Size(size.width, columnHeaderHeight))
+    drawRect(colors.headerFill, Offset.Zero, Size(rowHeaderWidth, size.height))
 
     // Column letters: one pass per region that owns columns, clipped to that
     // region's horizontal span so a scrolling letter cannot slide over a frozen
@@ -508,7 +521,7 @@ private fun DrawScope.drawHeaders(
                     zoom = HEADER_ZOOM,
                     textMeasurer = textMeasurer,
                     cache = cache,
-                    color = HEADER_TEXT,
+                    color = colors.headerText,
                 )
             }
         }
@@ -537,15 +550,15 @@ private fun DrawScope.drawHeaders(
                     zoom = HEADER_ZOOM,
                     textMeasurer = textMeasurer,
                     cache = cache,
-                    color = HEADER_TEXT,
+                    color = colors.headerText,
                 )
             }
         }
     }
 
     // Separators between the strips and the body.
-    drawLine(GRID_LINE, Offset(0f, columnHeaderHeight), Offset(size.width, columnHeaderHeight), GRID_STROKE)
-    drawLine(GRID_LINE, Offset(rowHeaderWidth, 0f), Offset(rowHeaderWidth, size.height), GRID_STROKE)
+    drawLine(colors.gridLine, Offset(0f, columnHeaderHeight), Offset(size.width, columnHeaderHeight), GRID_STROKE)
+    drawLine(colors.gridLine, Offset(rowHeaderWidth, 0f), Offset(rowHeaderWidth, size.height), GRID_STROKE)
 }
 
 /**
@@ -643,14 +656,22 @@ private const val CELL_PADDING = 4f
  */
 private const val HEADER_ZOOM = 1f
 private const val GRID_STROKE = 1f
-private val GRID_LINE = Color(0xFFD0D0D0)
-
-/** The freeze split, darker than a gridline so the reader can see the sheet is frozen. */
-private val FREEZE_LINE = Color(0xFF9098A8)
 private const val FREEZE_STROKE = 2f
-private val CELL_TEXT = Color(0xFF202020)
-private val HEADER_FILL = Color(0xFFF2F2F2)
-private val HEADER_TEXT = Color(0xFF606060)
+
+/**
+ * What colour a cell's text is drawn in.
+ *
+ * The document wins wherever it has actually chosen — see
+ * [GridColors.shouldSubstitute] for the single case where it does not, and why.
+ */
+private fun cellTextColor(style: CellStyle, colors: GridColors): Color {
+    val own = style.fontColor?.toCompose()
+    return if (colors.shouldSubstitute(own, hasFill = style.fillColor != null)) {
+        colors.cellText
+    } else {
+        own ?: colors.cellText
+    }
+}
 
 /** The last populated row and column of a sheet. */
 internal data class UsedBounds(val lastRow: Int, val lastColumn: Int)

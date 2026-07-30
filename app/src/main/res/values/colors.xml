@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Matches DarchaTheme's light surface, so the launch window and the first
+         composed frame are the same colour. -->
+    <color name="window_background">#FDF7FF</color>
+</resources>

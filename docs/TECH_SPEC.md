@@ -151,6 +151,49 @@ Every boundary is derived from **one number per axis**: the frozen extent, `span
 Scrolling gains a **floor**: the scrolling region starts at the first unfrozen column, and letting scroll fall below that would draw the frozen columns a second time inside the body. The floor is clamped in two places on purpose — in the reducer via `ScrollBounds`, and again inside the region maths, because the renderer publishes the bounds *after* the first composition and the first frame would otherwise be drawn unclamped.
 - **Merged cells:** drawn once at the anchor cell spanning the merged bounds; covered cells are skipped.
 
+### Theme, and the one place dark mode changes a document (T24)
+
+Material 3, light or dark by system setting, and the grid's own colours —
+gridlines, header strips, the freeze marker — move with it, so dark mode does not
+stop at the edge of the sheet. Dynamic colour is deliberately unused: the
+wallpaper deciding what a gridline looks like would make the same spreadsheet
+read differently on two phones, and the sheet is the product.
+
+One rule bends a document, and only in dark mode. **Every real Excel file writes
+`<color theme="1"/>` for ordinary text**, and theme 1 means *window text*, not
+black — but §7's documented v1 fallback resolves it to black, so by the time a
+style reaches the renderer "the default colour" and "deliberately black" are the
+same value and cannot be told apart. Drawn literally on a dark background, almost
+every cell of almost every real file is invisible. It is the common case, not an
+edge case.
+
+So in dark mode a near-black font colour is read as *default* and replaced with
+the theme's text colour, bounded twice:
+
+- **Never in light mode**, where the literal colour is right anyway.
+- **Never on a filled cell.** Black on the author's yellow is a deliberate
+  pairing; substituting there would put light text on a light fill, which is
+  worse than the problem it solves.
+
+Doing this properly means carrying "theme text" through as distinct from
+"explicit black", which is a `:core:parser` change worth making the next time
+that module opens.
+
+### Localization (T24)
+
+Default English, `values-uz` in Uzbek latin. Uzbek is the primary audience, so it
+is written as its own copy rather than translated sentence-by-sentence, using the
+domain's own words — *varaq*, *qator*, *ustun*, *jadval*.
+
+Both languages are held to the same rules by the same test, which reads the
+`strings.xml` files directly: no internal terms, every string present in every
+language, every error body offering an action, and no "translation" that is still
+the English string.
+
+**Month and weekday names are resources**, resolved by the UI and injected into
+the formatter as `DateNames`. That argument exists for exactly this: `:core:model`
+formats dates without knowing what a locale is.
+
 ## 9.1 Document session lifecycle
 
 Opening a document is not a single parse — it starts a **session** that later reads

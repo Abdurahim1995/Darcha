@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    O'zbekcha (lotin) — T24.
+
+    Bu tarjima emas, asosiy til. Darcha o'zbek foydalanuvchi uchun yozilgan,
+    shuning uchun jumlalar inglizchadan so'zma-so'z ko'chirilmagan: har biri
+    o'zbekchada tabiiy eshitiladigan qilib yozilgan.
+
+    Atamalar: varaq (sheet), qator (row), ustun (column), jadval (spreadsheet),
+    katak (cell). Yarim tarjima qilingan jumla bo'lmasin — "fayl damaged" emas,
+    "fayl shikastlangan".
+
+    Inglizcha faylda yozilgan qoidalar bu yerda ham amal qiladi: ichki
+    atamalar (OOXML, ZIP, parser) foydalanuvchiga ko'rinmaydi, va har bir xato
+    matni nima qilish kerakligini aytadi.
+-->
+<resources>
+
+    <!-- Bosh ekran -->
+    <string name="app_title">Darcha</string>
+    <string name="home_prompt">Ko\'rish uchun .xlsx faylni oching.</string>
+    <string name="home_empty_hint">Ochgan fayllaringiz shu yerda ko\'rinadi.</string>
+    <string name="home_recent_header">So\'nggi fayllar</string>
+    <string name="home_recent_unavailable">Endi mavjud emas</string>
+    <string name="home_recent_generic_subtitle">Jadval</string>
+    <string name="action_open_file">Fayl ochish</string>
+    <string name="action_open_short">Ochish</string>
+    <string name="action_open_another">Boshqa fayl ochish</string>
+    <string name="action_remove">O\'chirish</string>
+    <string name="action_retry">Qayta urinish</string>
+
+    <!-- Yuklanmoqda -->
+    <string name="parsing">Ochilmoqda…</string>
+
+    <!-- Xato ekranlari. Sarlavha — nima bo\'ldi. Matn — endi nima qilish kerak. -->
+    <string name="error_encrypted_title">Bu fayl parol bilan himoyalangan</string>
+    <string name="error_encrypted_body">Darcha jadvallarni ocha oladi, lekin parolni yecha olmaydi. Faylni yaratgan dasturda parolni olib tashlang va qaytadan oching.</string>
+
+    <string name="error_corrupted_title">Bu fayl shikastlangan</string>
+    <string name="error_corrupted_body">Uning ichidagi ma\'lumot to\'liq emas yoki bu umuman jadval emas. Faylni qaytadan yuklab oling.</string>
+
+    <string name="error_unsupported_title">Bu turdagi fayl qo\'llab-quvvatlanmaydi</string>
+    <string name="error_unsupported_body">Darcha .xlsx jadvallarini ochadi. Faylni .xlsx sifatida saqlang va qaytadan oching.</string>
+
+    <string name="error_too_large_title">Bu fayl juda katta</string>
+    <string name="error_too_large_body">Unga bu telefon xavfsiz ajrata oladiganidan ko\'proq xotira kerak. Kichikroq faylni sinab ko\'ring yoki uni bo\'laklarga ajrating.</string>
+
+    <string name="error_unreadable_title">Bu faylni o\'qib bo\'lmadi</string>
+    <string name="error_unreadable_body">U ko\'chirilgan yoki o\'chirilgan bo\'lishi mumkin, yoki Darchada endi uni ochish ruxsati yo\'q. Fayl menejeridan qaytadan oching.</string>
+
+    <!--
+        Sanalarda yoziladigan oy va hafta kunlari (mmm, dddd formatlari uchun).
+        Hafta yakshanbadan boshlanadi — ExcelDate shunday sanaydi.
+    -->
+    <string-array name="month_names">
+        <item>yanvar</item><item>fevral</item><item>mart</item><item>aprel</item>
+        <item>may</item><item>iyun</item><item>iyul</item><item>avgust</item>
+        <item>sentabr</item><item>oktabr</item><item>noyabr</item><item>dekabr</item>
+    </string-array>
+    <string-array name="day_names">
+        <item>yakshanba</item><item>dushanba</item><item>seshanba</item><item>chorshanba</item>
+        <item>payshanba</item><item>juma</item><item>shanba</item>
+    </string-array>
+
+    <!-- Ekran o\'quvchi uchun -->
+    <string name="cd_error_icon">Xato</string>
+
+</resources>

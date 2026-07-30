@@ -49,6 +49,22 @@
     <string name="error_unreadable_title">This file could not be read</string>
     <string name="error_unreadable_body">It may have been moved or deleted, or Darcha may no longer have permission to open it. Open it again from your file manager.</string>
 
+    <!--
+        Month and weekday names for date formats that spell them out (mmm, dddd).
+        These are resources rather than constants because :core:model must not
+        know about locale: T16 made DateNames an injected input precisely so the
+        wiring could live here. Weekdays start at Sunday, matching ExcelDate.
+    -->
+    <string-array name="month_names">
+        <item>January</item><item>February</item><item>March</item><item>April</item>
+        <item>May</item><item>June</item><item>July</item><item>August</item>
+        <item>September</item><item>October</item><item>November</item><item>December</item>
+    </string-array>
+    <string-array name="day_names">
+        <item>Sunday</item><item>Monday</item><item>Tuesday</item><item>Wednesday</item>
+        <item>Thursday</item><item>Friday</item><item>Saturday</item>
+    </string-array>
+
     <!-- Content descriptions -->
     <string name="cd_error_icon">Error</string>
 

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Ilova nomi tarjima qilinmaydi: "Darcha" allaqachon o'zbekcha so'z. -->
+    <string name="app_name">Darcha</string>
+</resources>

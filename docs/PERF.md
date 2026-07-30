@@ -139,6 +139,40 @@ Telling them apart means reading the ODF `mimetype` entry in `ContainerDetector`
 which is `:core:parser`, frozen for this task. The acceptance matrix allows either
 answer; worth revisiting if the parser opens again.
 
+## Themes and languages, verified on device (T24)
+
+Four combinations, error screens included in each run rather than only the happy
+path:
+
+| | Uzbek | English |
+|---|---|---|
+| **Dark** | ✅ home, styled sheet, frozen panes, error | ✅ home, styled sheet, error |
+| **Light** | ✅ home, styled sheet, error | ✅ home, error |
+
+No crashes, and no untranslated string in the Uzbek run.
+
+**The dark-mode text rule was the point of the styled-sheet screenshot.** On
+`styles-basic.xlsx` in dark: "Bold", "Italic" and "Center" carry theme-1 black on
+no fill and come out light and readable; "Fill" is black on the author's yellow
+and **stays black**, because the substitution skips filled cells; "Red" is not
+near-black and is left alone. See TECH_SPEC §9.
+
+**How the combinations were reached.** The A31 is genuinely set to `uz-Latn-UZ`
+with One UI dark mode on, so *uz + dark is the device's own configuration* — that
+one is fully native, and it proves `isSystemInDarkTheme()` is wired. The other
+three had to be forced, because this is a retail device:
+
+- `persist.sys.locale` needs root, and `cmd locale` does not exist on Android 10,
+  so English was reached by building with `resourceConfigurations = "en"` — the
+  uz resources are absent, so the device falls back to default. That renders the
+  English resources for real; it does not exercise Android's locale switch.
+- One UI overrides `cmd uimode night` and AOSP's `ui_night_mode`, both of which
+  report success and change nothing, so light mode was reached by forcing
+  `DarchaTheme(darkTheme = false)` in a temporary build.
+
+Both temporary changes were reverted. What is unproven is the *transition* —
+changing language or theme while the app is open — not the rendering.
+
 ## Time to first cell
 
 Measured in the ViewModel from the `OpenFile` intent to the `Ready` state — the

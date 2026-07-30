@@ -1,3 +1,5 @@
+import org.gradle.api.tasks.PathSensitivity
+
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)
@@ -35,6 +37,16 @@ android {
 
 kotlin {
     jvmToolchain(17)
+}
+
+// ErrorCopyTest reads res/values*/strings.xml straight off disk, so Gradle
+// cannot see it as an input and would report the task UP-TO-DATE after a
+// strings-only edit — the copy lint would silently stop running at exactly the
+// moment someone changed the copy. Declaring the directory fixes that.
+tasks.withType<Test>().configureEach {
+    inputs.dir("src/main/res")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+        .withPropertyName("stringResources")
 }
 
 dependencies {

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    The Activity theme (T24). Compose paints everything, so this only has to hand
+    over a window of the right colour before the first frame — without it, launch
+    shows a white flash on a dark device.
+
+    The night variant lives in values-night/ and swaps the *parent* rather than
+    using a DayNight theme: DayNight comes from AppCompat, and Darcha has no
+    AppCompat. Overriding one style name per configuration is the framework-only
+    way to the same result, and it costs no dependency.
+-->
+<resources>
+    <style name="Theme.Darcha" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/window_background</item>
+        <item name="android:statusBarColor">@color/window_background</item>
+        <item name="android:navigationBarColor">@color/window_background</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+</resources>

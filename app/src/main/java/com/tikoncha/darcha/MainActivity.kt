@@ -9,7 +9,6 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -24,6 +23,7 @@ import com.tikoncha.darcha.feature.viewer.data.WorkbookRepository
 import com.tikoncha.darcha.feature.viewer.data.XlsxWorkbookRepository
 import com.tikoncha.darcha.feature.viewer.mvi.ViewerIntent
 import com.tikoncha.darcha.feature.viewer.mvi.ViewerState
+import com.tikoncha.darcha.feature.viewer.ui.DarchaTheme
 import com.tikoncha.darcha.feature.viewer.ui.ViewerScreen
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -76,7 +76,7 @@ class MainActivity : ComponentActivity() {
         if (savedInstanceState == null) openFromIntent(intent)
 
         setContent {
-            MaterialTheme {
+            DarchaTheme {
                 // Held, not read: passing the holder down lets the grid observe
                 // viewport changes in its draw phase instead of recomposing here.
                 val state = viewModel.state.collectAsState()
