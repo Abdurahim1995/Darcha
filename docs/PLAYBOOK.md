@@ -27,7 +27,12 @@ Prerequisites in repo: `CLAUDE.md` (root), `docs/TECH_SPEC.md`, this file.
 **M2 — Raw grid on screen — ✅ COMPLETE**
 - [x] T10 MVI foundation · [x] T11 File loading · [x] T12 Geometry engine · [x] T13 Canvas render · [x] T14 Scroll+fling · [x] T15 Sheet tabs + perf gate
 
-> **M2 exit criteria — met.** The app opens a real `.xlsx`, draws it, scrolls it with gestures and switches sheets. Measurements in `docs/PERF.md`. One known gap recorded there: the grid renders only after the sheet is fully parsed, so a 50k-row file takes ~2.4 s to first cell instead of the progressive first-chunk render §7 describes.
+> **M2 exit criteria — met.** The app opens a real `.xlsx`, draws it, scrolls it with gestures and switches sheets. Measurements in `docs/PERF.md`. The first-paint gap found here was closed straight after, in T15.5.
+
+**M2.5 — Progressive first paint**
+- [x] T15.5 Progressive first paint
+
+> **T15.5 — DONE.** `big-50k-rows.xlsx` showed its first cells in 2,427 ms, violating §5. The parser already streamed in chunks (§7, T8) but the grid waited for the last row. Chunks now reach the renderer as partial snapshots: **175 ms to first cells**, complete parse unchanged. Before/after in `docs/PERF.md`.
 
 **M3 — Fidelity**
 - [ ] T16 Format engine · [ ] T17 Style render · [ ] T18 Merged cells · [ ] T19 Frozen panes · [ ] T20 Pinch zoom

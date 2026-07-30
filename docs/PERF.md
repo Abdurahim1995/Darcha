@@ -23,23 +23,44 @@ Measured in the ViewModel from the `OpenFile` intent to the `Ready` state — th
 whole pipeline: SAF stream → cache copy → ZIP open → workbook, shared strings and
 styles → first sheet parsed.
 
-| File | Size | Sheet | Time |
-|---|---|---|---|
-| `multisheet.xlsx` | 5.8 KB | 1 row × 3 sheets | **86 ms** |
-| `values-basic.xlsx` | 4.9 KB | 4 rows × 3 cols | **116 ms** |
-| `big-50k-rows.xlsx` | 1.78 MB | 50,001 rows × 7 cols ≈ 350k cells | **2,427 ms** (2,373 / 2,427 / 2,503 over three cold runs) |
+Two numbers matter, and they are no longer the same thing (T15.5):
 
-**Against the §5 target (< 1 s for typical files under 5 MB):** typical files land
-an order of magnitude inside it — around 100 ms. The 50k-row fixture does not, at
-~2.4 s.
+- **First cells** — the grid appears with the rows parsed so far. This is what
+  §5 means by time-to-first-cell.
+- **Complete parse** — the last row lands and the progress bar goes away.
 
-> **Known gap.** TECH_SPEC §7 describes progressive loading — "the first ~200 rows
-> are emitted to the UI immediately; the rest continues on `Dispatchers.IO`". The
-> parser does stream in chunks and the UI shows a progress bar, but the grid is
-> only rendered once the sheet is fully parsed, so what is measured above is
-> really *time-to-complete-parse*. Rendering the first chunk while the rest
-> streams in would bring the large-file number close to the small-file one. Not
-> attempted in M2; a candidate for M3 or a dedicated task.
+| File | Size | Sheet | First cells | Complete |
+|---|---|---|---|---|
+| `multisheet.xlsx` | 5.8 KB | 1 row × 3 sheets | — | **86 ms** |
+| `values-basic.xlsx` | 4.9 KB | 4 rows × 3 cols | — | **116 ms** |
+| `big-50k-rows.xlsx` | 1.78 MB | 50,001 rows × 7 cols ≈ 350k cells | **175 ms** (223 / 159 / 175) | **2,380 ms** (2,773 / 2,442 / 2,380) |
+
+Small files finish before a partial emission is ever due, so first-cells and
+complete are the same moment for them.
+
+**Against the §5 target (< 1 s for typical files under 5 MB): met.** Everything
+measured shows its first cells inside 250 ms.
+
+### Before and after T15.5
+
+| | Before | After |
+|---|---|---|
+| `big-50k-rows.xlsx` first cells | 2,427 ms | **175 ms** — 14× |
+| `big-50k-rows.xlsx` complete | 2,427 ms | 2,380 ms — unchanged, as expected |
+
+The parse itself did not get faster; the grid simply stopped waiting for it. Rows
+reach the renderer as they are parsed (first chunk immediately, then throttled to
+250 ms), and the viewport survives every update — scrolling through the first
+rows while the rest streams in does not jump.
+
+> **Remaining limitation.** Partial paints use the sheet's *default* column widths
+> and row heights: `<cols>` precedes `<sheetData>` in the XML, so the parser knows
+> them early, but `RowsChunk` does not carry them and `:core:parser` was left
+> untouched here. Files with custom column widths therefore re-layout once when
+> the parse completes. Only one fixture in the corpus (`excel/dates.xlsx`, which
+> parses in milliseconds) has `<cols>` at all, so this is currently invisible —
+> but a large styled file would show it. The fix is to include the layout-so-far
+> in the chunk.
 
 ## Cells drawn per frame
 

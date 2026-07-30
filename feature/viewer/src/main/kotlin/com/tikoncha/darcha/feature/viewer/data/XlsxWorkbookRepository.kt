@@ -2,6 +2,8 @@ package com.tikoncha.darcha.feature.viewer.data
 
 import com.tikoncha.darcha.feature.viewer.mvi.DocumentMeta
 import com.tikoncha.darcha.model.ErrorKind
+import com.tikoncha.darcha.model.SheetData
+import com.tikoncha.darcha.model.SheetLayout
 import com.tikoncha.darcha.parser.ParseResult
 import com.tikoncha.darcha.parser.Workbook
 import com.tikoncha.darcha.parser.XlsxParser
@@ -72,7 +74,7 @@ public class XlsxWorkbookRepository(
 
     override suspend fun load(
         source: WorkbookSource,
-        onProgress: (Float) -> Unit,
+        onPartial: (SheetProgress) -> Unit,
     ): WorkbookLoad = withContext(io) {
         mutex.withLock {
             // The previous document is done the moment another is opened.
@@ -101,7 +103,7 @@ public class XlsxWorkbookRepository(
                 }
                 opened = workbook
 
-                when (val read = readSheetFrom(workbook, source.displayName, 0, onProgress)) {
+                when (val read = readSheetFrom(workbook, source.displayName, 0, onPartial)) {
                     is WorkbookLoad.Success -> {
                         // Only a successful open starts a session — a failure keeps
                         // nothing alive and leaves no file behind.
@@ -125,12 +127,12 @@ public class XlsxWorkbookRepository(
 
     override suspend fun readSheet(
         index: Int,
-        onProgress: (Float) -> Unit,
+        onPartial: (SheetProgress) -> Unit,
     ): WorkbookLoad = withContext(io) {
         mutex.withLock {
             val open = session
                 ?: return@withLock WorkbookLoad.Failure(ErrorKind.Corrupted("no document is open"))
-            readSheetFrom(open.workbook, open.displayName, index, onProgress)
+            readSheetFrom(open.workbook, open.displayName, index, onPartial)
         }
     }
 
@@ -209,7 +211,7 @@ public class XlsxWorkbookRepository(
         workbook: Workbook,
         displayName: String,
         index: Int,
-        onProgress: (Float) -> Unit,
+        onPartial: (SheetProgress) -> Unit,
     ): WorkbookLoad {
         if (index !in workbook.sheets.indices) {
             return WorkbookLoad.Failure(ErrorKind.Corrupted("no sheet at index $index"))
@@ -217,6 +219,9 @@ public class XlsxWorkbookRepository(
 
         var cells = 0
         val job = coroutineContext
+        // Rows accumulated so far, so the grid can draw before the parse ends.
+        val soFar = LinkedHashMap<Int, com.tikoncha.darcha.model.Row>()
+        var lastEmitAt = 0L
         val result = try {
             workbook.readSheet(index) { chunk ->
                 job.ensureActive() // cooperative cancellation between chunks
@@ -224,7 +229,34 @@ public class XlsxWorkbookRepository(
                 // Abort the moment the cap is passed, rather than finishing the
                 // parse and rejecting a model we already paid the memory for.
                 if (cells > maxCells) throw CellCapExceeded(cells)
-                onProgress(progressFor(chunk.rowsSoFar))
+                soFar.putAll(chunk.rows)
+
+                // The first chunk paints immediately; after that emissions are
+                // throttled, because each one copies the accumulated rows into an
+                // immutable snapshot and that cost grows with the sheet.
+                val now = System.currentTimeMillis()
+                if (lastEmitAt == 0L || now - lastEmitAt >= PARTIAL_INTERVAL_MILLIS) {
+                    lastEmitAt = now
+                    // Layout is only complete once the whole part is read (merges
+                    // and panes follow <sheetData>), so partial paints use the
+                    // sheet defaults and the real layout lands with the final
+                    // result. See docs/PERF.md.
+                    onPartial(
+                        SheetProgress(
+                            meta = DocumentMeta(
+                                displayName = displayName,
+                                sheetNames = workbook.sheets.map { it.name },
+                                rowCount = soFar.size,
+                            ),
+                            sheet = SheetSnapshot(
+                                data = SheetData(LinkedHashMap(soFar)),
+                                layout = SheetLayout.EMPTY,
+                                sharedStrings = workbook.sharedStrings,
+                            ),
+                            progress = progressFor(chunk.rowsSoFar),
+                        ),
+                    )
+                }
             }
         } catch (e: CellCapExceeded) {
             return WorkbookLoad.Failure(
@@ -280,6 +312,14 @@ public class XlsxWorkbookRepository(
          * rendering starts (TECH_SPEC §13).
          */
         public const val MAX_CELLS: Int = 1_000_000
+
+        /**
+         * Minimum gap between partial snapshots, in ms. Small enough that the
+         * grid visibly fills in, large enough that copying the accumulated rows
+         * stays a rounding error next to the parse itself. The first chunk is
+         * always emitted, whatever this is set to.
+         */
+        private const val PARTIAL_INTERVAL_MILLIS = 250L
 
         /**
          * Rows at which reported progress reaches one half. Progress approaches

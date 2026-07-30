@@ -80,6 +80,9 @@ public sealed interface ViewerState {
      *   renderer once it knows the sheet's used range at this density (§9.2).
      * @property loadingSheetId the tab being read on demand, or `null` when
      *   nothing is pending. The grid keeps showing the current sheet meanwhile.
+     * @property loadProgress fraction parsed while the sheet is still streaming
+     *   in, or `null` once it is complete. The grid draws the rows it already
+     *   has (TECH_SPEC §7); this only drives the progress bar.
      */
     public data class Ready(
         public val docMeta: DocumentMeta,
@@ -89,6 +92,7 @@ public sealed interface ViewerState {
         public val selection: CellRef?,
         public val scrollBounds: ScrollBounds = ScrollBounds.UNKNOWN,
         public val loadingSheetId: Int? = null,
+        public val loadProgress: Float? = null,
     ) : ViewerState
 
     /**

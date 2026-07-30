@@ -222,6 +222,75 @@ class ViewerReducerTest {
         assertEquals(200f, next.viewport.scrollY, 0f)
     }
 
+    // --- progressive first paint (T15.5) ---
+
+    @Test
+    fun partialLoaded_fromParsing_putsTheGridUpImmediately() {
+        val next = reduce(
+            ViewerState.Parsing(0.1f),
+            ParseEvent.PartialLoaded(meta, SheetSnapshot.EMPTY, progress = 0.1f),
+        ) as ViewerState.Ready
+
+        assertEquals(meta, next.docMeta)
+        assertEquals(0.1f, next.loadProgress!!, 0f)
+        assertEquals(Viewport.INITIAL, next.viewport)
+    }
+
+    @Test
+    fun partialLoaded_whileReady_growsTheSheetWithoutMovingTheViewport() {
+        // The user may already be scrolling through the first rows; later chunks
+        // must not yank them back to the top.
+        val scrolled = ready(
+            viewport = Viewport(scrollX = 120f, scrollY = 4_000f, zoom = 1.5f),
+        ).copy(loadProgress = 0.2f)
+
+        val next = reduce(
+            scrolled,
+            ParseEvent.PartialLoaded(meta, SheetSnapshot.EMPTY, progress = 0.6f),
+        ) as ViewerState.Ready
+
+        assertEquals(scrolled.viewport, next.viewport)
+        assertEquals(0.6f, next.loadProgress!!, 0f)
+    }
+
+    @Test
+    fun loaded_afterPartials_clearsProgressAndKeepsTheViewport() {
+        val streaming = ready(viewport = Viewport(scrollX = 50f, scrollY = 900f))
+            .copy(loadProgress = 0.9f)
+
+        val next = reduce(streaming, ParseEvent.Loaded(meta, SheetSnapshot.EMPTY)) as ViewerState.Ready
+
+        assertNull("the bar must go away when the parse finishes", next.loadProgress)
+        assertEquals(streaming.viewport, next.viewport)
+    }
+
+    @Test
+    fun partialLoaded_afterTheUserMovedOn_isIgnored() {
+        // Idle or Error means this document is history; a late chunk must not
+        // resurrect it.
+        val event = ParseEvent.PartialLoaded(meta, SheetSnapshot.EMPTY, progress = 0.5f)
+        assertSame(ViewerState.Idle, reduce(ViewerState.Idle, event))
+        val error = ViewerState.Error(ErrorKind.Corrupted())
+        assertSame(error, reduce(error, event))
+    }
+
+    @Test
+    fun failure_duringStreaming_replacesThePartialGrid() {
+        // Half a sheet is worse than an honest error, so a mid-parse failure
+        // takes over even though the grid is already up.
+        val streaming = ready().copy(loadProgress = 0.4f)
+        val kind = ErrorKind.TooLarge("cap")
+        assertEquals(ViewerState.Error(kind), reduce(streaming, ParseEvent.Failed(kind)))
+    }
+
+    @Test
+    fun failure_afterLoadingCompleted_leavesTheSheetAlone() {
+        // loadProgress == null means this document finished; a stray failure from
+        // somewhere else must not wipe it.
+        val settled = ready()
+        assertSame(settled, reduce(settled, ParseEvent.Failed(ErrorKind.Corrupted())))
+    }
+
     // --- scroll bounds (T14) ---
 
     @Test

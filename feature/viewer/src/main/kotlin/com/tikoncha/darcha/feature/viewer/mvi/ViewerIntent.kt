@@ -61,6 +61,16 @@ public sealed interface ParseEvent : ViewerEvent {
     /** Progressive loading advanced to [progress] (`0f..1f`). */
     public data class Progress(public val progress: Float) : ParseEvent
 
+    /**
+     * Rows parsed so far, ready to draw while the rest still streams in (T15.5).
+     * Arrives repeatedly during one load, each time with more rows.
+     */
+    public data class PartialLoaded(
+        public val meta: DocumentMeta,
+        public val sheet: SheetSnapshot,
+        public val progress: Float,
+    ) : ParseEvent
+
     /** The document loaded successfully, with its first sheet ready to draw. */
     public data class Loaded(
         public val meta: DocumentMeta,

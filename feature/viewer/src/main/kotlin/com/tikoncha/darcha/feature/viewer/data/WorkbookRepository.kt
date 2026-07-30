@@ -31,6 +31,21 @@ public interface WorkbookSource {
     public fun openStream(): InputStream
 }
 
+/**
+ * A sheet mid-parse: the rows read so far, with the metadata already known.
+ *
+ * The workbook part and the shared strings are parsed before any row, so the
+ * names and the string table are complete from the first emission — only the
+ * rows and the layout are still filling in.
+ *
+ * @property progress fraction parsed so far, in `0f..1f`.
+ */
+public data class SheetProgress(
+    public val meta: DocumentMeta,
+    public val sheet: SheetSnapshot,
+    public val progress: Float,
+)
+
 /** The outcome of loading a document. */
 public sealed interface WorkbookLoad {
 
@@ -55,18 +70,22 @@ public sealed interface WorkbookLoad {
 public interface WorkbookRepository {
 
     /**
-     * Load the document behind [source] and read its first sheet, reporting
-     * progress in `0f..1f` through [onProgress] as rows stream in.
+     * Load the document behind [source] and read its first sheet.
+     *
+     * [onPartial] receives the sheet **as it is being parsed** — a snapshot of
+     * the rows so far plus progress in `0f..1f` — so the grid can paint its first
+     * cells long before the last row arrives (TECH_SPEC §7). Emissions are
+     * throttled; the first chunk always fires immediately.
      *
      * Opening a document starts a **session** that stays open until the next
-     * [load] or a [close] — later sheets are read from it with [readSheet].
+     * [load] or a [closeDocument] — later sheets are read from it with [readSheet].
      *
      * Never throws for a bad document: failures come back as
      * [WorkbookLoad.Failure].
      */
     public suspend fun load(
         source: WorkbookSource,
-        onProgress: (Float) -> Unit,
+        onPartial: (SheetProgress) -> Unit,
     ): WorkbookLoad
 
     /**
@@ -75,7 +94,7 @@ public interface WorkbookRepository {
      */
     public suspend fun readSheet(
         index: Int,
-        onProgress: (Float) -> Unit = {},
+        onPartial: (SheetProgress) -> Unit = {},
     ): WorkbookLoad
 
     /**

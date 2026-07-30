@@ -70,21 +70,52 @@ public object ViewerReducer {
                     state
                 }
 
-            is ParseEvent.Loaded ->
-                if (state is ViewerState.Parsing) {
-                    ViewerState.Ready(
-                        docMeta = event.meta,
-                        sheet = event.sheet,
-                        activeSheetId = 0,
-                        viewport = Viewport.INITIAL,
-                        selection = null,
-                    )
-                } else {
-                    state
-                }
+            // First rows of a still-streaming sheet. From Parsing this is the
+            // moment the grid appears; from Ready it just grows the sheet, so the
+            // viewport must survive — the user may already be scrolling.
+            is ParseEvent.PartialLoaded -> when (state) {
+                is ViewerState.Parsing -> ViewerState.Ready(
+                    docMeta = event.meta,
+                    sheet = event.sheet,
+                    activeSheetId = 0,
+                    viewport = Viewport.INITIAL,
+                    selection = null,
+                    loadProgress = event.progress.coerceIn(0f, 1f),
+                )
+                is ViewerState.Ready -> state.copy(
+                    docMeta = event.meta,
+                    sheet = event.sheet,
+                    loadProgress = event.progress.coerceIn(0f, 1f),
+                )
+                // Never resurrect a document the user has moved on from.
+                else -> state
+            }
 
-            is ParseEvent.Failed ->
-                if (state is ViewerState.Parsing) ViewerState.Error(event.kind) else state
+            is ParseEvent.Loaded -> when (state) {
+                is ViewerState.Parsing -> ViewerState.Ready(
+                    docMeta = event.meta,
+                    sheet = event.sheet,
+                    activeSheetId = 0,
+                    viewport = Viewport.INITIAL,
+                    selection = null,
+                )
+                // The grid is already up from partials: swap in the complete
+                // sheet and its real layout, keeping where the user is looking.
+                is ViewerState.Ready -> state.copy(
+                    docMeta = event.meta,
+                    sheet = event.sheet,
+                    loadProgress = null,
+                )
+                else -> state
+            }
+
+            // A failure can arrive after partials have already put the grid up.
+            is ParseEvent.Failed -> when (state) {
+                is ViewerState.Parsing -> ViewerState.Error(event.kind)
+                is ViewerState.Ready ->
+                    if (state.loadProgress != null) ViewerState.Error(event.kind) else state
+                else -> state
+            }
 
             is ParseEvent.SheetLoaded -> state.mapReady { ready ->
                 // A different sheet has its own geometry, so the viewport, the

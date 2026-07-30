@@ -57,6 +57,15 @@ public class ViewerViewModel(
 
     private var loadJob: Job? = null
 
+    /**
+     * Which load is current. Partial results now paint into `Ready`, so the T10
+     * rule — "parse events only apply while Parsing" — no longer rejects a stale
+     * one on its own. Every callback carries the generation it was started with
+     * and is dropped if a newer load has begun; cancellation is cooperative, so
+     * a chunk can still be in flight when the next document opens.
+     */
+    private var loadGeneration: Int = 0
+
     /** The glide currently running, if any. A new touch cancels it. */
     private var flingJob: Job? = null
 
@@ -181,11 +190,28 @@ public class ViewerViewModel(
         loadJob?.cancel()
         sheetJob?.cancel()
         sheetCache.clear() // a different document; nothing carries over
+        val generation = ++loadGeneration
         loadJob = workScope.launch {
             val startedAt = System.currentTimeMillis()
-            val result = repository.load(source) { progress ->
-                apply(ParseEvent.Progress(progress))
+            var firstPaintAt = 0L
+            val result = repository.load(source) { partial ->
+                if (generation != loadGeneration) return@load
+                if (firstPaintAt == 0L) {
+                    firstPaintAt = System.currentTimeMillis()
+                    onDiagnostic(
+                        "first cells of '${source.displayName}' in " +
+                            "${firstPaintAt - startedAt} ms",
+                    )
+                }
+                apply(
+                    ParseEvent.PartialLoaded(
+                        meta = partial.meta,
+                        sheet = partial.sheet,
+                        progress = partial.progress,
+                    ),
+                )
             }
+            if (generation != loadGeneration) return@launch
             when (result) {
                 is WorkbookLoad.Success -> {
                     sheetCache[0] = result.meta to result.sheet

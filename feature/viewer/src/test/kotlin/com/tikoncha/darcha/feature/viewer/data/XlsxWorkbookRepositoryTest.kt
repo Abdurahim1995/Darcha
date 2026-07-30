@@ -59,7 +59,7 @@ class XlsxWorkbookRepositoryTest {
         val source = BytesSource(workbookBytes(rows = 4), displayName = "values.xlsx")
         val progress = mutableListOf<Float>()
 
-        val result = repository().load(source) { progress.add(it) }
+        val result = repository().load(source) { progress.add(it.progress) }
 
         val meta = (result as WorkbookLoad.Success).meta
         assertEquals("values.xlsx", meta.displayName)
@@ -81,6 +81,22 @@ class XlsxWorkbookRepositoryTest {
         assertEquals(com.tikoncha.darcha.model.CellValue.Number(1.0), sheet.data.cellAt(0, 0))
         assertEquals(com.tikoncha.darcha.model.CellValue.Number(6.0), sheet.data.cellAt(1, 2))
         assertEquals(SheetLayout.DEFAULT_COL_WIDTH, sheet.layout.defaultColWidth, 0.0)
+    }
+
+    @Test
+    fun partials_carryRowsAsTheyArrive_notJustProgress() = runBlocking {
+        // The point of T15.5: each emission is a drawable snapshot, and it grows.
+        val partials = mutableListOf<SheetProgress>()
+        val result = repository().load(BytesSource(workbookBytes(rows = 900))) { partials.add(it) }
+
+        assertTrue("at least one partial before the end", partials.isNotEmpty())
+        assertTrue("the first partial must already carry rows", partials.first().sheet.data.rows.isNotEmpty())
+        assertTrue(
+            "row counts must not shrink between partials",
+            partials.map { it.sheet.data.rows.size }.zipWithNext().all { (a, b) -> b >= a },
+        )
+        assertEquals(listOf("Sheet1"), partials.first().meta.sheetNames)
+        assertEquals(900, (result as WorkbookLoad.Success).sheet.data.rows.size)
     }
 
     @Test
@@ -183,7 +199,7 @@ class XlsxWorkbookRepositoryTest {
         val source = BytesSource(workbookBytes(rows = 400))
         val progress = mutableListOf<Float>()
 
-        repository(maxCells = 10).load(source) { progress.add(it) }
+        repository(maxCells = 10).load(source) { progress.add(it.progress) }
 
         val fullParse = XlsxWorkbookRepository.progressFor(400)
         assertTrue(

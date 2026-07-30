@@ -58,6 +58,9 @@ public fun ViewerScreen(
     val loadingSheetId by remember(state) {
         derivedStateOf { (state.value as? ViewerState.Ready)?.loadingSheetId }
     }
+    val loadProgress by remember(state) {
+        derivedStateOf { (state.value as? ViewerState.Ready)?.loadProgress }
+    }
 
     val readySheet = sheet
     val readyMeta = docMeta
@@ -67,6 +70,7 @@ public fun ViewerScreen(
             docMeta = readyMeta,
             activeSheetId = activeSheetId,
             loadingSheetId = loadingSheetId,
+            loadProgress = loadProgress,
             viewport = {
                 (state.value as? ViewerState.Ready)?.viewport ?: Viewport.INITIAL
             },

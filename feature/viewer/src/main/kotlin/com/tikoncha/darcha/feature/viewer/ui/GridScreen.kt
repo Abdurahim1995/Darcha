@@ -40,6 +40,7 @@ internal fun GridScreen(
     docMeta: DocumentMeta,
     activeSheetId: Int,
     loadingSheetId: Int?,
+    loadProgress: Float?,
     viewport: () -> Viewport,
     onOpenFile: () -> Unit,
     onScroll: (dx: Float, dy: Float) -> Unit,
@@ -81,9 +82,15 @@ internal fun GridScreen(
             onDrawnCells = { drawnCells = it },
         )
 
-        // A sheet is being read on demand; the grid keeps showing the current one.
-        if (loadingSheetId != null) {
-            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        // Either the first sheet is still streaming in (T15.5) or another tab is
+        // being read on demand (T15). Both keep the grid on screen and show the
+        // bar underneath it.
+        when {
+            loadProgress != null -> LinearProgressIndicator(
+                progress = { loadProgress },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            loadingSheetId != null -> LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
         }
 
         SheetTabs(

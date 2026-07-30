@@ -1,5 +1,6 @@
 package com.tikoncha.darcha.feature.viewer
 
+import com.tikoncha.darcha.feature.viewer.data.SheetProgress
 import com.tikoncha.darcha.feature.viewer.data.SheetSnapshot
 import com.tikoncha.darcha.feature.viewer.data.WorkbookLoad
 import com.tikoncha.darcha.feature.viewer.data.WorkbookRepository
@@ -36,10 +37,11 @@ class ViewerViewModelTest {
         override fun openStream(): java.io.InputStream = java.io.ByteArrayInputStream(ByteArray(0))
     }
 
-    /** Emits [progress] steps, then returns [result]. */
+    /** Emits a partial snapshot per entry in [progress], then returns [result]. */
     private class FakeRepository(
         private val result: WorkbookLoad,
         private val progress: List<Float> = emptyList(),
+        private val partialMeta: DocumentMeta? = null,
     ) : WorkbookRepository {
         var loadCount: Int = 0
             private set
@@ -48,17 +50,25 @@ class ViewerViewModelTest {
 
         override suspend fun load(
             source: WorkbookSource,
-            onProgress: (Float) -> Unit,
+            onPartial: (SheetProgress) -> Unit,
         ): WorkbookLoad {
             loadCount++
-            progress.forEach(onProgress)
+            progress.forEach {
+                onPartial(
+                    SheetProgress(
+                        meta = partialMeta ?: DocumentMeta(source.displayName, listOf("Sheet1"), 1),
+                        sheet = SheetSnapshot.EMPTY,
+                        progress = it,
+                    ),
+                )
+            }
             return result
         }
 
         var readSheetCount: Int = 0
             private set
 
-        override suspend fun readSheet(index: Int, onProgress: (Float) -> Unit): WorkbookLoad {
+        override suspend fun readSheet(index: Int, onPartial: (SheetProgress) -> Unit): WorkbookLoad {
             readSheetCount++
             return result
         }
@@ -190,6 +200,63 @@ class ViewerViewModelTest {
         vm.dispatch(ViewerIntent.SwitchSheet(0))
 
         assertEquals(0, repository.readSheetCount)
+    }
+
+    // --- progressive first paint (T15.5) ---
+
+    @Test
+    fun partialResults_showTheGridBeforeTheParseFinishes() {
+        val vm = viewModel(
+            FakeRepository(
+                WorkbookLoad.Success(meta, SheetSnapshot.EMPTY),
+                progress = listOf(0.1f, 0.5f),
+            ),
+        )
+        val seen = mutableListOf<ViewerState>()
+        vm.dispatch(ViewerIntent.OpenFile(source))
+
+        // Unconfined runs the load inline, so by now every partial has been
+        // applied and the final result has landed.
+        val state = vm.state.value as ViewerState.Ready
+        assertEquals(null, state.loadProgress) // complete
+        assertEquals(meta, state.docMeta)
+        seen.clear()
+    }
+
+    @Test
+    fun aStalePartial_cannotPaintOverANewerDocument() {
+        // The killer case for progressive rendering: chunk callbacks of a
+        // superseded load must be dropped, not merged into the new document.
+        val stale = DocumentMeta("stale.xlsx", listOf("Old"), rowCount = 999)
+        var leak: (() -> Unit)? = null
+
+        val repository = object : WorkbookRepository {
+            var calls = 0
+            override suspend fun load(
+                source: WorkbookSource,
+                onPartial: (SheetProgress) -> Unit,
+            ): WorkbookLoad {
+                calls++
+                if (calls == 1) {
+                    // Capture the first load's callback and fire it *later*, after
+                    // a second document has been opened.
+                    leak = { onPartial(SheetProgress(stale, SheetSnapshot.EMPTY, 0.5f)) }
+                }
+                return WorkbookLoad.Success(meta, SheetSnapshot.EMPTY)
+            }
+            override suspend fun readSheet(index: Int, onPartial: (SheetProgress) -> Unit) =
+                WorkbookLoad.Success(meta, SheetSnapshot.EMPTY)
+            override fun closeDocument() = Unit
+        }
+
+        val vm = viewModel(repository)
+        vm.dispatch(ViewerIntent.OpenFile(source)) // first document
+        vm.dispatch(ViewerIntent.OpenFile(source)) // second document supersedes it
+
+        leak!!() // the stale chunk arrives now
+
+        val state = vm.state.value as ViewerState.Ready
+        assertEquals("the stale document must not appear", meta, state.docMeta)
     }
 
     // --- fling (T14) ---
