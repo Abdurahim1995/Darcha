@@ -1,6 +1,8 @@
 package com.tikoncha.darcha
 
 import android.content.Intent
+import android.net.Uri
+import android.provider.OpenableColumns
 import android.util.Log
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -10,17 +12,23 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import com.tikoncha.darcha.feature.viewer.ViewerViewModel
+import com.tikoncha.darcha.feature.viewer.data.RecentsRepository
+import com.tikoncha.darcha.feature.viewer.data.RecentsStore
 import com.tikoncha.darcha.feature.viewer.data.WorkbookRepository
 import com.tikoncha.darcha.feature.viewer.data.XlsxWorkbookRepository
 import com.tikoncha.darcha.feature.viewer.mvi.ViewerIntent
+import com.tikoncha.darcha.feature.viewer.mvi.ViewerState
 import com.tikoncha.darcha.feature.viewer.ui.ViewerScreen
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * The app's single entry point: wires the parser-backed repository into
@@ -39,8 +47,19 @@ class MainActivity : ComponentActivity() {
     private val repository: XlsxWorkbookRepository
         get() = (application as DarchaApplication).workbookRepository
 
+    /** The one recents store for this process — see [DarchaApplication]. */
+    private val recentsStore: RecentsStore
+        get() = (application as DarchaApplication).recentsStore
+
     private val viewModel: ViewerViewModel by lazy {
-        ViewModelProvider(this, ViewerViewModelFactory(repository))[ViewerViewModel::class.java]
+        ViewModelProvider(
+            this,
+            ViewerViewModelFactory(
+                repository = repository,
+                recents = recentsStore,
+                isRecentAvailable = ::isRecentAvailable,
+            ),
+        )[ViewerViewModel::class.java]
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -62,22 +81,19 @@ class MainActivity : ComponentActivity() {
                 // Held, not read: passing the holder down lets the grid observe
                 // viewport changes in its draw phase instead of recomposing here.
                 val state = viewModel.state.collectAsState()
+                val recents = viewModel.recentDocuments.collectAsState()
+
+                // Availability is a fact about the world, not about the record,
+                // so it is re-checked every time the list comes back into view.
+                LaunchedEffect(state.value) {
+                    if (state.value is ViewerState.Idle) viewModel.refreshRecents()
+                }
 
                 val picker = rememberLauncherForActivityResult(
                     ActivityResultContracts.OpenDocument(),
                 ) { uri ->
                     if (uri == null) return@rememberLauncherForActivityResult
-                    // Needed so T22 can reopen this document from the recents
-                    // list. Not every provider grants it, so failure is survivable.
-                    runCatching {
-                        contentResolver.takePersistableUriPermission(
-                            uri,
-                            Intent.FLAG_GRANT_READ_URI_PERMISSION,
-                        )
-                    }
-                    viewModel.dispatch(
-                        ViewerIntent.OpenFile(ContentUriSource.from(contentResolver, uri)),
-                    )
+                    viewModel.dispatch(ViewerIntent.OpenFile(sourceFor(uri)))
                 }
 
                 Surface(modifier = Modifier.fillMaxSize()) {
@@ -95,10 +111,59 @@ class MainActivity : ComponentActivity() {
                         },
                         onBoundsChanged = { viewModel.onScrollBoundsChanged(it) },
                         onSelectSheet = { viewModel.dispatch(ViewerIntent.SwitchSheet(it)) },
+                        recents = recents.value,
+                        onOpenRecent = { id ->
+                            viewModel.dispatch(ViewerIntent.OpenFile(sourceFor(Uri.parse(id))))
+                        },
+                        onForgetRecent = { viewModel.forgetRecent(it) },
                     )
                 }
             }
         }
+    }
+
+    /**
+     * Build a source for [uri], taking a **persistable** read permission first.
+     *
+     * Whether that succeeds is exactly what decides if the document can join the
+     * recents list (T22). A SAF pick offers a persistable grant and this
+     * succeeds; an `ACTION_VIEW` from a file manager does not, and it throws —
+     * so the document is opened and viewed, but never remembered. That is the
+     * whole of the honesty rule in `RecentDocument`: the list holds only things
+     * that will open.
+     *
+     * A provider is also free to refuse for its own reasons, which lands in the
+     * same place: viewable now, not remembered.
+     */
+    private fun sourceFor(uri: Uri): ContentUriSource {
+        val reopenable = runCatching {
+            contentResolver.takePersistableUriPermission(
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION,
+            )
+        }.isSuccess
+        if (!reopenable) Log.d(LOG_TAG, "no persistable grant for $uri; not remembering it")
+        return ContentUriSource.from(contentResolver, uri, reopenable = reopenable)
+    }
+
+    /**
+     * Whether a remembered document can still be opened right now.
+     *
+     * Two things can have changed since it was written: the grant may have been
+     * revoked (the provider's app uninstalled, or the user cleared it), and the
+     * file itself may be gone. Both are checked, because holding a grant to a
+     * deleted file is a perfectly ordinary state and would otherwise show a row
+     * that fails on tap.
+     */
+    private suspend fun isRecentAvailable(id: String): Boolean = withContext(Dispatchers.IO) {
+        val uri = runCatching { Uri.parse(id) }.getOrNull() ?: return@withContext false
+        val held = contentResolver.persistedUriPermissions.any { it.uri == uri && it.isReadPermission }
+        if (!held) return@withContext false
+        // Cheap existence probe: a provider answers for a document it still has.
+        runCatching {
+            contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+                ?.use { it.moveToFirst() } ?: false
+        }.getOrDefault(false)
     }
 
     /**
@@ -135,9 +200,7 @@ class MainActivity : ComponentActivity() {
         // URIs; for intent URIs it needs the file copied, or the entry marked
         // one-shot and shown differently.
         Log.d(LOG_TAG, "ACTION_VIEW ${intent.type} $uri")
-        viewModel.dispatch(
-            ViewerIntent.OpenFile(ContentUriSource.from(contentResolver, uri)),
-        )
+        viewModel.dispatch(ViewerIntent.OpenFile(sourceFor(uri)))
     }
 
     private companion object {
@@ -158,6 +221,8 @@ class MainActivity : ComponentActivity() {
 /** Supplies [ViewerViewModel] with its repository (TECH_SPEC §6 — DI wiring). */
 private class ViewerViewModelFactory(
     private val repository: WorkbookRepository,
+    private val recents: RecentsRepository,
+    private val isRecentAvailable: suspend (String) -> Boolean,
 ) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         require(modelClass.isAssignableFrom(ViewerViewModel::class.java)) {
@@ -167,6 +232,8 @@ private class ViewerViewModelFactory(
         return ViewerViewModel(
             repository = repository,
             onDiagnostic = { Log.d("Darcha.Viewer", it) },
+            recents = recents,
+            isRecentAvailable = isRecentAvailable,
         ) as T
     }
 }

@@ -18,6 +18,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.tikoncha.darcha.feature.viewer.data.RecentDocument
 import com.tikoncha.darcha.feature.viewer.mvi.ScrollBounds
 import com.tikoncha.darcha.feature.viewer.mvi.ViewerState
 import com.tikoncha.darcha.feature.viewer.mvi.Viewport
@@ -50,6 +51,9 @@ public fun ViewerScreen(
     onResetZoom: (focalX: Float, focalY: Float) -> Unit = { _, _ -> },
     onBoundsChanged: (ScrollBounds) -> Unit = {},
     onSelectSheet: (Int) -> Unit = {},
+    recents: List<RecentDocument> = emptyList(),
+    onOpenRecent: (String) -> Unit = {},
+    onForgetRecent: (String) -> Unit = {},
 ) {
     // Stable slices: these change on load, not on every frame of a drag.
     val sheet by remember(state) { derivedStateOf { (state.value as? ViewerState.Ready)?.sheet } }
@@ -88,6 +92,19 @@ public fun ViewerScreen(
         return
     }
 
+    // The home screen is a full-height list, not a centred block of text, so it
+    // is rendered directly rather than through NonGridStates' container.
+    if (state.value is ViewerState.Idle) {
+        HomeScreen(
+            recents = recents,
+            onOpenFile = onOpenFile,
+            onOpenRecent = onOpenRecent,
+            onForgetRecent = onForgetRecent,
+            modifier = modifier,
+        )
+        return
+    }
+
     NonGridStates(
         state = state.value,
         onOpenFile = onOpenFile,
@@ -96,7 +113,7 @@ public fun ViewerScreen(
     )
 }
 
-/** Idle, Parsing and Error — the states that are a centred column of text. */
+/** Parsing and Error — the states that are a centred column of text. */
 @Composable
 private fun NonGridStates(
     state: ViewerState,
@@ -112,15 +129,8 @@ private fun NonGridStates(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         when (state) {
-            ViewerState.Idle -> {
-                Text("Darcha", style = MaterialTheme.typography.headlineMedium)
-                Text(
-                    text = "Open an .xlsx file to view it.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.padding(top = 8.dp, bottom = 24.dp),
-                )
-                Button(onClick = onOpenFile) { Text("Open file") }
-            }
+            // Handled by ViewerScreen before we get here.
+            ViewerState.Idle -> Unit
 
             is ViewerState.Parsing -> {
                 Text("Parsing…", style = MaterialTheme.typography.titleMedium)

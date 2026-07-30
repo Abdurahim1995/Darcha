@@ -49,6 +49,12 @@ dependencies {
     // because ViewerViewModel is a ViewModel that :app constructs itself (T11).
     api(libs.androidx.lifecycle.viewmodel.ktx)
 
+    // Recent files are persisted here (T22). Approved by the owner: the Flow API
+    // feeds the existing StateFlow wiring without a hand-rolled change listener,
+    // and it is what Google recommends for new code. SharedPreferences would do
+    // the job with less weight; the glue is what tipped it.
+    implementation(libs.androidx.datastore.preferences)
+
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.ui)
     implementation(libs.androidx.material3)

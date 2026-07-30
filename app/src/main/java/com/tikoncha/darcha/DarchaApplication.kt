@@ -1,6 +1,7 @@
 package com.tikoncha.darcha
 
 import android.app.Application
+import com.tikoncha.darcha.feature.viewer.data.RecentsStore
 import com.tikoncha.darcha.feature.viewer.data.XlsxWorkbookRepository
 
 /**
@@ -22,4 +23,13 @@ internal class DarchaApplication : Application() {
     val workbookRepository: XlsxWorkbookRepository by lazy {
         XlsxWorkbookRepository(cacheDir = cacheDir)
     }
+
+    /**
+     * The recent-documents list (T22).
+     *
+     * DataStore insists on one instance per file per process — a second would
+     * race the first — which is another reason this lives beside the repository
+     * rather than being built where it is used.
+     */
+    val recentsStore: RecentsStore by lazy { RecentsStore.create(this) }
 }

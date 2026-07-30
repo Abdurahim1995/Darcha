@@ -19,6 +19,7 @@ internal class ContentUriSource(
     private val uri: Uri,
     override val displayName: String,
     override val declaredSizeBytes: Long?,
+    override val recentId: String?,
 ) : WorkbookSource {
 
     /**
@@ -54,8 +55,16 @@ internal class ContentUriSource(
          * provider: it can refuse, or reject the document id outright. A failure
          * here only costs the name and the size hint — the load then fails
          * properly, on its own dispatcher, and lands on the error screen.
+         *
+         * @param reopenable whether this document may be added to recents —
+         *   `true` only when a persistable read permission was taken for [uri].
+         *   See [WorkbookSource.recentId].
          */
-        fun from(resolver: ContentResolver, uri: Uri): ContentUriSource {
+        fun from(
+            resolver: ContentResolver,
+            uri: Uri,
+            reopenable: Boolean = false,
+        ): ContentUriSource {
             var name: String? = null
             var size: Long? = null
             val columns = arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE)
@@ -74,6 +83,7 @@ internal class ContentUriSource(
                 uri = uri,
                 displayName = name ?: uri.lastPathSegment ?: "document.xlsx",
                 declaredSizeBytes = size,
+                recentId = uri.toString().takeIf { reopenable },
             )
         }
     }

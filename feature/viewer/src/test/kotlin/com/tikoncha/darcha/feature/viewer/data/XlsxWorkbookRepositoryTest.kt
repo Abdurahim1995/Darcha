@@ -444,6 +444,49 @@ class XlsxWorkbookRepositoryTest {
         assertEquals(FrozenPanes.NONE, first.frozenPanes)
     }
 
+    // --- reopening, as recents does (T22) ---
+
+    /**
+     * A recents list means the same document gets opened over and over. Each
+     * open makes a fresh temp copy, so the question is whether the old ones go.
+     *
+     * They must: the copy belongs to the *open document* (TECH_SPEC §9.1), and a
+     * new load releases the previous session before it starts. This walks the
+     * exact sequence a user does — A, B, A again — and checks the cache
+     * directory after every step rather than only at the end, so a leak cannot
+     * hide behind a later cleanup.
+     */
+    @Test
+    fun reopeningDocumentsRepeatedly_leavesOneTempCopy() = runBlocking {
+        val cacheDir = temp.newFolder()
+        val repository = XlsxWorkbookRepository(cacheDir = cacheDir, io = Dispatchers.Unconfined)
+        val a = BytesSource(workbookBytes(rows = 3), displayName = "a.xlsx")
+        val b = BytesSource(workbookBytes(rows = 7), displayName = "b.xlsx")
+
+        fun tempCopies() = cacheDir.listFiles().orEmpty().filter { it.name.startsWith("darcha-") }
+
+        assertEquals("nothing before the first open", 0, tempCopies().size)
+
+        assertEquals(3, (repository.load(a) {} as WorkbookLoad.Success).meta.rowCount)
+        val afterA = tempCopies().single()
+
+        assertEquals(7, (repository.load(b) {} as WorkbookLoad.Success).meta.rowCount)
+        val afterB = tempCopies().single()
+        assertTrue("B's copy is a new file", afterB != afterA)
+        assertTrue("A's copy is gone", !afterA.exists())
+
+        assertEquals(3, (repository.load(a) {} as WorkbookLoad.Success).meta.rowCount)
+        assertEquals("still exactly one", 1, tempCopies().size)
+        assertTrue("B's copy is gone", !afterB.exists())
+
+        // And ten more opens do not accumulate either.
+        repeat(10) { repository.load(if (it % 2 == 0) a else b) {} }
+        assertEquals("no growth over repeated opens", 1, tempCopies().size)
+
+        repository.closeDocument()
+        assertEquals("and nothing is left behind", 0, tempCopies().size)
+    }
+
     // --- helpers ---
 
     /**

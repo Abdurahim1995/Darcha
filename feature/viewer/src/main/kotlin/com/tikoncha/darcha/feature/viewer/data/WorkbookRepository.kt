@@ -29,6 +29,42 @@ public interface WorkbookSource {
      * the stream.
      */
     public fun openStream(): InputStream
+
+    /**
+     * A handle this document can be **reopened** from later, or `null` if it
+     * cannot be (T22).
+     *
+     * Non-null only when the platform granted a permission that outlives this
+     * task. That is what keeps the recents list honest: a document opened from a
+     * file manager is viewed but not remembered, because its grant is one-shot
+     * (TECH_SPEC §9.1) and the entry would fail on the very first tap.
+     */
+    public val recentId: String? get() = null
+}
+
+/**
+ * The recent-documents list, behind an interface so the ViewModel can be tested
+ * without DataStore or a filesystem — the same split as [WorkbookRepository].
+ */
+public interface RecentsRepository {
+
+    /** The list, newest first. Emits again after every change. */
+    public val recents: kotlinx.coroutines.flow.Flow<List<RecentDocument>>
+
+    /** Record [document] as just opened, moving it to the front. */
+    public suspend fun remember(document: RecentDocument)
+
+    /** Drop the entry with [id]. */
+    public suspend fun forget(id: String)
+
+    public companion object {
+        /** A store that remembers nothing — the default, and what tests get. */
+        public val NONE: RecentsRepository = object : RecentsRepository {
+            override val recents = kotlinx.coroutines.flow.flowOf(emptyList<RecentDocument>())
+            override suspend fun remember(document: RecentDocument) = Unit
+            override suspend fun forget(id: String) = Unit
+        }
+    }
 }
 
 /**

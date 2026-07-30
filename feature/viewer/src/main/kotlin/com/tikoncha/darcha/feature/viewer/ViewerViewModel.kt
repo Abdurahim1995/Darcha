@@ -2,6 +2,8 @@ package com.tikoncha.darcha.feature.viewer
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.tikoncha.darcha.feature.viewer.data.RecentDocument
+import com.tikoncha.darcha.feature.viewer.data.RecentsRepository
 import com.tikoncha.darcha.feature.viewer.data.WorkbookLoad
 import com.tikoncha.darcha.feature.viewer.data.WorkbookRepository
 import com.tikoncha.darcha.feature.viewer.data.WorkbookSource
@@ -21,7 +23,11 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
@@ -39,11 +45,18 @@ import kotlinx.coroutines.launch
  * @param onDiagnostic receives timing notes for the log. Injected rather than
  *   calling `android.util.Log` directly, which is a throwing stub in unit tests
  *   and would drag this class onto an instrumented runner.
+ * @param recents the persisted recent-documents list (T22).
+ * @param isRecentAvailable answers whether a stored document can still be opened
+ *   right now. Injected because the answer is a platform question — is the grant
+ *   still held, is the file still there — that this class must not know how to
+ *   ask. Defaults to optimistic, which is what tests want.
  */
 public class ViewerViewModel(
     private val repository: WorkbookRepository,
     scope: CoroutineScope? = null,
     private val onDiagnostic: (String) -> Unit = {},
+    private val recents: RecentsRepository = RecentsRepository.NONE,
+    private val isRecentAvailable: suspend (String) -> Boolean = { true },
 ) : ViewModel() {
 
     private val workScope: CoroutineScope = scope ?: viewModelScope
@@ -52,6 +65,19 @@ public class ViewerViewModel(
 
     /** The current UI state. */
     public val state: StateFlow<ViewerState> = _state.asStateFlow()
+
+    /**
+     * Re-checked whenever the home screen comes back into view. Availability is
+     * not a property of the stored record — a grant can be revoked and a file
+     * deleted long after it was written — so it is recomputed rather than saved.
+     */
+    private val availabilityTick = MutableStateFlow(0)
+
+    /** The recent documents, newest first, each marked available or not. */
+    public val recentDocuments: StateFlow<List<RecentDocument>> =
+        combine(recents.recents, availabilityTick) { documents, _ -> documents }
+            .map { documents -> documents.map { it.copy(available = isRecentAvailable(it.id)) } }
+            .stateIn(workScope, SharingStarted.Eagerly, emptyList())
 
     /** The last source we tried to open, so [ViewerIntent.Retry] can re-run it. */
     private var lastSource: WorkbookSource? = null
@@ -125,6 +151,38 @@ public class ViewerViewModel(
             }
 
             else -> apply(intent)
+        }
+    }
+
+    /** Re-check which recents can still be opened — call when the list appears. */
+    public fun refreshRecents() {
+        availabilityTick.value++
+    }
+
+    /** Remove a recent the user no longer wants, or can no longer open. */
+    public fun forgetRecent(id: String) {
+        workScope.launch { recents.forget(id) }
+    }
+
+    /**
+     * Add [source] to the recents list, but only if it can actually be reopened.
+     *
+     * A source with no [WorkbookSource.recentId] came in through a route whose
+     * permission dies with the task, so remembering it would put a row in the
+     * list that fails on its first tap. Viewing it is fine; promising to have it
+     * later is not (see [RecentDocument]).
+     */
+    private fun rememberIfReopenable(source: WorkbookSource, displayName: String) {
+        val id = source.recentId ?: return
+        workScope.launch {
+            recents.remember(
+                RecentDocument(
+                    id = id,
+                    displayName = displayName,
+                    lastOpened = System.currentTimeMillis(),
+                    sizeBytes = source.declaredSizeBytes,
+                ),
+            )
         }
     }
 
@@ -257,6 +315,7 @@ public class ViewerViewModel(
             when (result) {
                 is WorkbookLoad.Success -> {
                     sheetCache[0] = result.meta to result.sheet
+                    rememberIfReopenable(source, result.meta.displayName)
                     // Time-to-first-cell, the §5 product metric; recorded in
                     // docs/PERF.md.
                     onDiagnostic(

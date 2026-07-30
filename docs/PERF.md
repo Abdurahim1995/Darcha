@@ -25,6 +25,7 @@ TECH_SPEC §5 sets **< 5 MB**. Measured on the release variant:
 |---|---|
 | Release as configured today (`isMinifyEnabled = false`) | **6.27 MB** — over the target |
 | Release with R8 + resource shrinking | **0.87 MB** (0.88 MB signed) |
+| …plus DataStore and the recents list (T22) | **1.06 MB** — the new dependency cost ~190 KB shrunk |
 
 Inside the shrunk APK: `classes.dex` 1.53 MB uncompressed, `resources.arsc`
 76 KB. The app carries no images, no fonts and no libraries beyond Compose and
