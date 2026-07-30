@@ -101,6 +101,8 @@ What a chunk knows follows directly from the order of the XML:
 | Row heights | **A delta, like the rows themselves** | A row's `ht` arrives with the row, so a chunk is always drawable at its true height. Consumers merge chunk layouts exactly as they merge chunk rows (`putAll`). |
 | Merges, frozen panes | **Never** | `<mergeCells>` follows `<sheetData>`; they arrive with the finished `Worksheet`. Neither affects where a row sits, so nothing moves when they land. |
 
+**What that looks like on screen (T18).** A merged title is drawn as an ordinary cell until the parse finishes, then becomes a span: its text stops being clipped to the first column and its fill widens. Nothing else changes — verified on a 50k-row file with 501 merges, where every pixel below the merged row is byte-identical before and after the merges arrive. This is the intended trade: merges are cosmetic, and waiting for them would cost the progressive paint that T15.5 exists for. See `docs/PERF.md`.
+
 **Row heights streaming is not a gap to fix.** Later rows only shift rows *below* them, which have not been drawn yet — a row is never moved after it is on screen. Only the column axis had to be known up front, and it is.
 
 ### Cell types

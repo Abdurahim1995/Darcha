@@ -84,6 +84,27 @@ row, so every row is drawn at its true height from its first paint; later rows
 only ever shift rows *below* them, which are not on screen yet. Only the column
 axis had to be known up front, and `<cols>` precedes `<sheetData>` — so it is.
 
+## Merged cells arriving late (T18)
+
+`<mergeCells>` follows `<sheetData>`, so merges cannot reach a partial paint
+(TECH_SPEC §7). What the user actually sees was checked rather than assumed, on a
+50,000-row file with **501 merges** — a merged banner plus a merged section
+header every 100 rows.
+
+| | Mid-parse (1.3 s in) | Complete (2.6 s) |
+|---|---|---|
+| Merged title | drawn as a plain cell, text clipped to column A, fill one column wide | spans all seven columns, text centred across the span |
+| Everything below it | — | **byte-identical to mid-parse** |
+
+Cropping the two frames below the title row gives the same SHA-256, so **no
+geometry moved when the merges landed**; only the title row repainted. That is
+the T15.6 guarantee holding: column widths and row heights are known from the
+first chunk, and merges change neither.
+
+It reads as a cell whose text is too long for its column — ordinary, not broken —
+and then snaps together. Waiting for merges would mean waiting for the whole
+parse, which is exactly what T15.5 removed.
+
 ## Cells drawn per frame
 
 The renderer visits only `GridGeometry.visibleRange`, so cost tracks the window,
@@ -186,10 +207,12 @@ measure, then delete it:
 python3 tools/gen_fixtures.py big
 ```
 
-That writes `big-50k-rows.xlsx`, `big-50k-wide.xlsx` and `styled-20k.xlsx`. Push
+That writes `big-50k-rows.xlsx` plus three measurement aids: `big-50k-wide.xlsx`
+(T15.6 layout), `styled-20k.xlsx` (T17 styling and cache) and `big-merged.xlsx`
+(T18 merges arriving late). Push
 the wide one, open it, and screenshot once while the progress bar is still up and
 once after it disappears; the grid body of the two frames must be identical.
 
-`styled-20k.xlsx` is the T17 styling and cache measurement. Neither of the extra
-two is committed — they are measurement aids, not golden fixtures, and would
-double the corpus for no assertion. Delete them when you are done.
+None of the three is committed — they are measurement aids, not golden fixtures,
+and together they would multiply the size of the corpus several times over for no
+assertion. Delete them when the measurement is done.

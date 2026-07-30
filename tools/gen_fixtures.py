@@ -463,6 +463,51 @@ def gen_styled_20k() -> None:
     print("    (20000 rows, 8 style combinations, NOT committed)")
 
 
+def gen_big_merged() -> None:
+    """A 50k-row sheet with merges — the T18 progressive-paint check.
+
+    `<mergeCells>` follows `<sheetData>`, so merges cannot reach a partial paint
+    (see TECH_SPEC §7). This file makes that visible: a merged banner at the top
+    and a merged section header every 100 rows, on a sheet big enough that the
+    grid is on screen for seconds before the merges arrive.
+
+    Deliberately **not** committed, like the other measurement aids.
+    """
+    from openpyxl.styles import Alignment, Font, PatternFill
+
+    ROWS = 50_000
+    COLUMNS = 7
+    SECTION_EVERY = 100
+
+    wb = _new_workbook(first_sheet="Report")
+    ws = wb.active
+    ws["A1"] = "Yillik hisobot — 2024"
+    ws["A1"].font = Font(bold=True, size=14)
+    ws["A1"].alignment = Alignment(horizontal="center")
+    ws["A1"].fill = PatternFill("solid", fgColor="FFD9E1F2")
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=COLUMNS)
+
+    ws.append(["id", "value", "delta", "count", "pct", "category", "note"])
+    row = 2
+    for i in range(1, ROWS + 1):
+        row += 1
+        if i % SECTION_EVERY == 0:
+            ws.cell(row=row, column=1, value=f"Bo'lim {i // SECTION_EVERY}")
+            ws.cell(row=row, column=1).font = Font(bold=True)
+            ws.cell(row=row, column=1).fill = PatternFill("solid", fgColor="FFE2EFDA")
+            ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=COLUMNS)
+            continue
+        for c, v in enumerate(
+            [i, (i * 7) % 1000, round((i % 97) / 97.0, 4), i * 3,
+             round((i % 100) / 100.0, 2), f"kat-{i % 6}", "-"],
+            start=1,
+        ):
+            ws.cell(row=row, column=c, value=v)
+
+    _save(wb, "big-merged.xlsx")
+    print(f"    ({ROWS} rows, {1 + ROWS // SECTION_EVERY} merges, NOT committed)")
+
+
 def main() -> None:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     if "big" in sys.argv[1:]:
@@ -470,6 +515,7 @@ def main() -> None:
         gen_big_50k()
         gen_big_50k_wide()
         gen_styled_20k()
+        gen_big_merged()
         print("Done.")
         return
     print(f"Generating synthetic fixtures into {OUT_DIR.relative_to(REPO_ROOT)} ...")

@@ -3,6 +3,7 @@ package com.tikoncha.darcha.feature.viewer.ui
 import android.util.Log
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
@@ -11,6 +12,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
@@ -26,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.style.TextAlign
 import com.tikoncha.darcha.feature.viewer.geometry.GridGeometry
+import com.tikoncha.darcha.feature.viewer.geometry.MergeIndex
 import com.tikoncha.darcha.feature.viewer.geometry.VisibleRange
 import com.tikoncha.darcha.feature.viewer.data.SheetSnapshot
 import com.tikoncha.darcha.feature.viewer.mvi.ScrollBounds
@@ -46,8 +49,9 @@ import kotlin.math.roundToInt
  * header strips: column letters along the top, row numbers down the left.
  *
  * Cell styling is applied here (T17): fills, bold/italic, text colour and
- * alignment, each clipped to its cell. Merged cells (T18) and frozen panes (T19)
- * are still to come.
+ * alignment, each clipped to its cell. Merged ranges are drawn once at their
+ * anchor across the whole span, with the covered cells skipped (T18). Frozen
+ * panes (T19) are still to come.
  *
  * @param state the sheet to draw.
  * @param onDrawnCells reports how many body cells the last pass visited, so the
@@ -85,6 +89,16 @@ public fun GridCanvas(
     // paint keeps everything measured so far (T15.6) and a new document starts
     // clean.
     val textCache = remember(sheet.styles) { CellTextCache<TextLayoutResult>() }
+
+    // Built once per sheet, not per frame. Merges arrive only when the parse
+    // completes (<mergeCells> follows <sheetData>, TECH_SPEC §7), so during a
+    // progressive load this is empty and the cells draw unmerged until the last
+    // chunk lands.
+    val merges = remember(layout.merges) { MergeIndex.of(layout.merges) }
+
+    // What a merged span paints over the gridlines it hides, when its anchor
+    // carries no fill of its own.
+    val surface = MaterialTheme.colorScheme.surface
     val formatted = remember(sheet.styles, sheet.sharedStrings, sheet.date1904) {
         FormattedValueCache(
             styles = sheet.styles,
@@ -144,6 +158,8 @@ public fun GridCanvas(
             sheetData = sheet.data,
             styles = sheet.styles,
             formatted = formatted,
+            merges = merges,
+            surface = surface,
             originX = rowHeaderWidth,
             originY = columnHeaderHeight,
             textMeasurer = textMeasurer,
@@ -179,8 +195,9 @@ public fun GridCanvas(
 /**
  * Fills, gridlines and values for the visible block.
  *
- * Drawn in that order on purpose: a cell's fill sits under the gridlines the way
- * it does in Excel, and text sits over both.
+ * Order matters. Cell fills go under the gridlines the way they do in Excel;
+ * then merged spans paint over both, because a merge has to hide the gridlines
+ * running through it; then text, so nothing paints over a value.
  */
 private fun DrawScope.drawBody(
     range: VisibleRange,
@@ -189,13 +206,16 @@ private fun DrawScope.drawBody(
     sheetData: SheetData,
     styles: StyleTable,
     formatted: FormattedValueCache,
+    merges: MergeIndex,
+    surface: Color,
     originX: Float,
     originY: Float,
     textMeasurer: TextMeasurer,
     cache: CellTextCache<TextLayoutResult>,
 ) {
     clipRect(left = originX, top = originY, right = size.width, bottom = size.height) {
-        // Fills first, so gridlines stay visible on top of a filled cell.
+        // Fills first, so gridlines stay visible on top of a filled cell. Covered
+        // cells are skipped — their span is painted with the anchor's fill below.
         for (row in range.firstRow..range.lastRow) {
             val cells = sheetData.row(row) ?: continue
             val top = originY + geometry.screenYOf(row, viewport)
@@ -204,6 +224,7 @@ private fun DrawScope.drawBody(
                 val column = cells.columns[i]
                 if (column < range.firstColumn) continue
                 if (column > range.lastColumn) break
+                if (merges.indexOf(row, column) != MergeIndex.NONE) continue
                 val fill = styles[cells.styleIds[i]]?.fillColor ?: continue
                 drawRect(
                     color = fill.toCompose(),
@@ -227,6 +248,34 @@ private fun DrawScope.drawBody(
             }
         }
 
+        // Merged spans: one rect per range, painted over the gridlines crossing
+        // it, then outlined so the merge still reads as a cell.
+        if (!merges.isEmpty) {
+            merges.forEachIntersecting(
+                range.firstRow,
+                range.lastRow,
+                range.firstColumn,
+                range.lastColumn,
+            ) { index ->
+                val anchorRow = merges.startRow(index)
+                val anchorCol = merges.startCol(index)
+                val left = originX + geometry.screenXOf(anchorCol, viewport)
+                val top = originY + geometry.screenYOf(anchorRow, viewport)
+                val width = geometry.spanWidthOf(anchorCol, merges.endCol(index), viewport)
+                val height = geometry.spanHeightOf(anchorRow, merges.endRow(index), viewport)
+                val fill = sheetData.styleIdAt(anchorRow, anchorCol)
+                    ?.let { styles[it]?.fillColor?.toCompose() }
+                    ?: surface
+                drawRect(color = fill, topLeft = Offset(left, top), size = Size(width, height))
+                drawRect(
+                    color = GRID_LINE,
+                    topLeft = Offset(left, top),
+                    size = Size(width, height),
+                    style = Stroke(width = GRID_STROKE),
+                )
+            }
+        }
+
         // Values. Rows are sparse, so absent rows cost nothing.
         for (row in range.firstRow..range.lastRow) {
             val cells = sheetData.row(row) ?: continue
@@ -240,14 +289,31 @@ private fun DrawScope.drawBody(
                 val value = cells.values[i]
                 val text = formatted.format(value, styleId)
                 if (text.isEmpty()) continue
+
+                // A merged range shows one value, at its anchor, laid out across
+                // the whole span. Whatever a covered cell holds is not shown —
+                // Excel keeps such values but does not display them either.
+                val merge = merges.indexOf(row, column)
+                if (merge != MergeIndex.NONE && !merges.isAnchor(merge, row, column)) continue
+                val cellLeft = originX + geometry.screenXOf(column, viewport)
+                val cellWidth: Float
+                val cellHeight: Float
+                if (merge == MergeIndex.NONE) {
+                    cellWidth = geometry.screenWidthOf(column, viewport)
+                    cellHeight = height
+                } else {
+                    cellWidth = geometry.spanWidthOf(column, merges.endCol(merge), viewport)
+                    cellHeight = geometry.spanHeightOf(row, merges.endRow(merge), viewport)
+                }
+
                 val style = styles[styleId] ?: CellStyle.DEFAULT
                 drawCellText(
                     text = text,
                     styleId = styleId,
-                    left = originX + geometry.screenXOf(column, viewport),
+                    left = cellLeft,
                     top = top,
-                    width = geometry.screenWidthOf(column, viewport),
-                    height = height,
+                    width = cellWidth,
+                    height = cellHeight,
                     zoom = viewport.zoom,
                     textMeasurer = textMeasurer,
                     cache = cache,
@@ -255,7 +321,9 @@ private fun DrawScope.drawBody(
                     weight = style.fontWeight,
                     italic = style.fontStyle,
                     align = style.resolveAlignment(value),
-                    verticalOffset = { textHeight -> style.verticalOffset(height, textHeight, CELL_PADDING) },
+                    verticalOffset = { textHeight ->
+                        style.verticalOffset(cellHeight, textHeight, CELL_PADDING)
+                    },
                 )
             }
         }

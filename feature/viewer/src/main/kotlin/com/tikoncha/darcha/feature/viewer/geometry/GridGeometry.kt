@@ -145,6 +145,21 @@ public class GridGeometry(
     public fun screenHeightOf(row: Int, viewport: Viewport): Float =
         rows.sizeOf(row) * viewport.zoom
 
+    /**
+     * Screen width of the columns `startColumn..endColumn` at [viewport]'s zoom —
+     * the horizontal extent of a merged range (T18).
+     *
+     * Measured edge to edge rather than by summing widths, so it stays correct
+     * over a span of custom-width columns and costs the same for a two-column
+     * merge as for a thousand-column one.
+     */
+    public fun spanWidthOf(startColumn: Int, endColumn: Int, viewport: Viewport): Float =
+        (columns.offsetOf(endColumn + 1) - columns.offsetOf(startColumn)) * viewport.zoom
+
+    /** Screen height of the rows `startRow..endRow` at [viewport]'s zoom. */
+    public fun spanHeightOf(startRow: Int, endRow: Int, viewport: Viewport): Float =
+        (rows.offsetOf(endRow + 1) - rows.offsetOf(startRow)) * viewport.zoom
+
     public companion object {
         /** Excel's row limit, and ours. */
         public const val MAX_ROWS: Int = 1_048_576
