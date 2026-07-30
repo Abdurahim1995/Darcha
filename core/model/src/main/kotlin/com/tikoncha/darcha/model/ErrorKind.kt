@@ -39,4 +39,20 @@ public sealed interface ErrorKind {
      * loader to guard against OOM (TECH_SPEC §13). Produced from T11 onward.
      */
     public data class TooLarge(override val message: String? = null) : ErrorKind
+
+    /**
+     * The bytes could not be read at all — so nothing is known about whether the
+     * document is valid (T23).
+     *
+     * Distinct from [Corrupted], and the distinction matters to the person
+     * reading the screen. `Corrupted` says *your file is broken*; this says
+     * *we could not get to your file*, which is usually true of a perfectly good
+     * document: the permission that came with it has expired, or it has been
+     * moved or deleted since. Telling someone their spreadsheet is damaged when
+     * it is not sends them looking for a problem that does not exist.
+     *
+     * Produced when the read fails — a revoked `content://` grant, a provider
+     * that refuses, a file that has gone away — rather than when the parse does.
+     */
+    public data class Unreadable(override val message: String? = null) : ErrorKind
 }

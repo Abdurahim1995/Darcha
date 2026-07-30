@@ -275,7 +275,7 @@ sealed interface ViewerState {
         val viewport: Viewport,    // scrollX, scrollY (content px, §9.2), zoom
         val selection: CellRef?,
     ) : ViewerState
-    data class Error(val kind: ErrorKind) : ViewerState  // Corrupted, Encrypted, Unsupported, TooLarge
+    data class Error(val kind: ErrorKind) : ViewerState  // Corrupted, Encrypted, Unsupported, TooLarge, Unreadable
 }
 
 sealed interface ViewerIntent {
@@ -296,6 +296,21 @@ while drawing rather than materialized for a sheet that may be a million rows lo
 
 Parser results reach the reducer as a second event family alongside the intents,
 so there is one `reduce(state, event)` entry point and one place state changes.
+
+### Error copy (T23)
+
+Every kind gets its own full-screen state: an icon, one sentence saying what
+happened, one saying what to do, and a way out. The rules the copy follows are in
+`feature/viewer/src/main/res/values/strings.xml` and enforced by a test that
+reads that file — **no internal ever reaches the screen**. "OOXML", "ZIP",
+"parser" and the exception text are ours, not the reader's, and none of them tell
+someone holding a phone what to do next.
+
+`Unreadable` was added in T23 to stop a lie. A revoked permission used to surface
+as `Corrupted` — "this file is damaged" — about a file that is perfectly fine and
+that the user would then go looking to repair. The two failures are genuinely
+different: one is about the document, the other is about our access to it, and
+only the second is worth a Retry button.
 
 ## 11. Milestones
 

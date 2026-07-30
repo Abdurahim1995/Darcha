@@ -17,9 +17,11 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.tikoncha.darcha.feature.viewer.R
 import com.tikoncha.darcha.feature.viewer.data.RecentDocument
 
 /**
@@ -49,7 +51,7 @@ internal fun HomeScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
-            text = "Darcha",
+            text = stringResource(R.string.app_title),
             style = MaterialTheme.typography.headlineMedium,
             modifier = Modifier.padding(top = 48.dp),
         )
@@ -60,16 +62,16 @@ internal fun HomeScreen(
         }
 
         Text(
-            text = "Open an .xlsx file to view it.",
+            text = stringResource(R.string.home_prompt),
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.padding(top = 8.dp),
         )
         Button(onClick = onOpenFile, modifier = Modifier.padding(top = 16.dp, bottom = 24.dp)) {
-            Text("Open file")
+            Text(stringResource(R.string.action_open_file))
         }
 
         Text(
-            text = "Recent",
+            text = stringResource(R.string.home_recent_header),
             style = MaterialTheme.typography.titleSmall,
             modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
         )
@@ -95,17 +97,17 @@ private fun EmptyRecents(onOpenFile: () -> Unit) {
         verticalArrangement = Arrangement.Center,
     ) {
         Text(
-            text = "Open an .xlsx file to view it.",
+            text = stringResource(R.string.home_prompt),
             style = MaterialTheme.typography.bodyMedium,
             textAlign = TextAlign.Center,
         )
         Text(
-            text = "Files you open will appear here.",
+            text = stringResource(R.string.home_empty_hint),
             style = MaterialTheme.typography.bodySmall,
             textAlign = TextAlign.Center,
             modifier = Modifier.padding(top = 4.dp, bottom = 24.dp),
         )
-        Button(onClick = onOpenFile) { Text("Open file") }
+        Button(onClick = onOpenFile) { Text(stringResource(R.string.action_open_file)) }
     }
 }
 
@@ -143,9 +145,10 @@ private fun RecentRow(
             )
             Text(
                 text = if (document.available) {
-                    document.sizeBytes?.let { formatSize(it) } ?: "Spreadsheet"
+                    document.sizeBytes?.let { formatSize(it) }
+                        ?: stringResource(R.string.home_recent_generic_subtitle)
                 } else {
-                    "No longer available"
+                    stringResource(R.string.home_recent_unavailable)
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = if (document.available) {
@@ -155,7 +158,7 @@ private fun RecentRow(
                 },
             )
         }
-        TextButton(onClick = onForget) { Text("Remove") }
+        TextButton(onClick = onForget) { Text(stringResource(R.string.action_remove)) }
     }
 }
 

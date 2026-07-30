@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    User-facing copy for the viewer (T23). English now; T24 adds an Uzbek
+    values-uz/ beside this file.
+
+    Rules these strings follow, and any new one should too:
+
+    * Say what happened, in one sentence, in words the reader already knows.
+      Never name an internal: no "OOXML", no "ZIP container", no "ErrorKind",
+      no exception text. The person holding the phone did not choose our
+      file format and cannot act on its name.
+    * Then say what they can do about it. A title that only reports a failure
+      leaves the reader stuck.
+    * Do not blame the file unless we actually know it is at fault. "Damaged"
+      and "cannot be read" are different claims, and only one of them is true
+      when a permission has expired.
+-->
+<resources>
+
+    <!-- Home -->
+    <string name="app_title">Darcha</string>
+    <string name="home_prompt">Open an .xlsx file to view it.</string>
+    <string name="home_empty_hint">Files you open will appear here.</string>
+    <string name="home_recent_header">Recent</string>
+    <string name="home_recent_unavailable">No longer available</string>
+    <string name="home_recent_generic_subtitle">Spreadsheet</string>
+    <string name="action_open_file">Open file</string>
+    <string name="action_open_short">Open</string>
+    <string name="action_open_another">Open another file</string>
+    <string name="action_remove">Remove</string>
+    <string name="action_retry">Retry</string>
+
+    <!-- Loading -->
+    <string name="parsing">Opening…</string>
+
+    <!-- Error screens. Title = what happened. Body = what to do next. -->
+    <string name="error_encrypted_title">This file is password-protected</string>
+    <string name="error_encrypted_body">Darcha can open spreadsheets but cannot unlock them. Remove the password in the app that created the file, then open it again.</string>
+
+    <string name="error_corrupted_title">This file is damaged</string>
+    <string name="error_corrupted_body">Its contents are incomplete or not a spreadsheet at all. Try downloading or exporting it again.</string>
+
+    <string name="error_unsupported_title">This kind of file is not supported</string>
+    <string name="error_unsupported_body">Darcha opens .xlsx spreadsheets. Save this file as .xlsx and open it again.</string>
+
+    <string name="error_too_large_title">This file is too large</string>
+    <string name="error_too_large_body">It needs more memory than this phone can safely give it. Try a smaller file, or split it into several.</string>
+
+    <string name="error_unreadable_title">This file could not be read</string>
+    <string name="error_unreadable_body">It may have been moved or deleted, or Darcha may no longer have permission to open it. Open it again from your file manager.</string>
+
+    <!-- Content descriptions -->
+    <string name="cd_error_icon">Error</string>
+
+</resources>

@@ -19,8 +19,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.tikoncha.darcha.feature.viewer.R
 import com.tikoncha.darcha.feature.viewer.data.SheetSnapshot
 import com.tikoncha.darcha.feature.viewer.mvi.DocumentMeta
 import com.tikoncha.darcha.feature.viewer.mvi.ScrollBounds
@@ -69,7 +71,7 @@ internal fun GridScreen(
                     style = MaterialTheme.typography.labelSmall,
                 )
             }
-            TextButton(onClick = onOpenFile) { Text("Open") }
+            TextButton(onClick = onOpenFile) { Text(stringResource(R.string.action_open_short)) }
         }
 
         GridCanvas(

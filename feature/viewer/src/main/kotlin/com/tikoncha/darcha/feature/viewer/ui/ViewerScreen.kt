@@ -18,6 +18,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
+import com.tikoncha.darcha.feature.viewer.R
 import com.tikoncha.darcha.feature.viewer.data.RecentDocument
 import com.tikoncha.darcha.feature.viewer.mvi.ScrollBounds
 import com.tikoncha.darcha.feature.viewer.mvi.ViewerState
@@ -92,6 +94,17 @@ public fun ViewerScreen(
         return
     }
 
+    val current = state.value
+    if (current is ViewerState.Error) {
+        ErrorScreen(
+            kind = current.kind,
+            onOpenFile = onOpenFile,
+            onRetry = onRetry,
+            modifier = modifier,
+        )
+        return
+    }
+
     // The home screen is a full-height list, not a centred block of text, so it
     // is rendered directly rather than through NonGridStates' container.
     if (state.value is ViewerState.Idle) {
@@ -113,7 +126,7 @@ public fun ViewerScreen(
     )
 }
 
-/** Parsing and Error — the states that are a centred column of text. */
+/** Parsing — the one remaining state that is a centred column of text. */
 @Composable
 private fun NonGridStates(
     state: ViewerState,
@@ -133,7 +146,7 @@ private fun NonGridStates(
             ViewerState.Idle -> Unit
 
             is ViewerState.Parsing -> {
-                Text("Parsing…", style = MaterialTheme.typography.titleMedium)
+                Text(stringResource(R.string.parsing), style = MaterialTheme.typography.titleMedium)
                 LinearProgressIndicator(
                     progress = { state.progress },
                     modifier = Modifier
@@ -145,32 +158,8 @@ private fun NonGridStates(
             // Handled by GridScreen before we get here.
             is ViewerState.Ready -> Unit
 
-            is ViewerState.Error -> {
-                Text("Could not open the file", style = MaterialTheme.typography.titleMedium)
-                Text(
-                    text = state.kind.describe(),
-                    style = MaterialTheme.typography.bodyMedium,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(top = 8.dp, bottom = 24.dp),
-                )
-                Button(onClick = onRetry) { Text("Retry") }
-                Button(
-                    onClick = onOpenFile,
-                    modifier = Modifier.padding(top = 8.dp),
-                ) { Text("Open another file") }
-            }
+            // Handled by ViewerScreen before we get here.
+            is ViewerState.Error -> Unit
         }
     }
-}
-
-/**
- * A one-line explanation for [ErrorKind]. Placeholder copy in English; T23
- * replaces this with proper string resources and per-kind screens, and T24
- * localizes it.
- */
-private fun ErrorKind.describe(): String = when (this) {
-    is ErrorKind.Encrypted -> "This file is password-protected, so it cannot be opened."
-    is ErrorKind.Corrupted -> "This file is damaged or is not a valid .xlsx document."
-    is ErrorKind.Unsupported -> "This file format is not supported."
-    is ErrorKind.TooLarge -> "This file is too large to open on this device."
 }

@@ -115,8 +115,12 @@ public class XlsxWorkbookRepository(
                     is WorkbookLoad.Failure -> read
                 }
             } catch (e: IOException) {
+                // The bytes never arrived, so nothing is known about the document
+                // itself. Calling that "corrupted" would tell the user their file
+                // is broken when the usual cause is an expired permission or a
+                // file that has moved (T23).
                 WorkbookLoad.Failure(
-                    ErrorKind.Corrupted("could not read '${source.displayName}': ${e.message}"),
+                    ErrorKind.Unreadable("could not read '${source.displayName}': ${e.message}"),
                 )
             } finally {
                 opened?.close()

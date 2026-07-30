@@ -325,7 +325,16 @@ public class ViewerViewModel(
                     )
                     apply(ParseEvent.Loaded(result.meta, result.sheet))
                 }
-                is WorkbookLoad.Failure -> apply(ParseEvent.Failed(result.kind))
+                is WorkbookLoad.Failure -> {
+                    // Failures are worth timing too: a cap that trips only after
+                    // a long parse is a slow error screen, and that is a real
+                    // user-facing cost (T23).
+                    onDiagnostic(
+                        "failed '${source.displayName}' after " +
+                            "${System.currentTimeMillis() - startedAt} ms: ${result.kind}",
+                    )
+                    apply(ParseEvent.Failed(result.kind))
+                }
             }
         }
     }

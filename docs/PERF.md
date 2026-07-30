@@ -97,6 +97,48 @@ there is no command to drop a single persisted URI grant, and the provider here
 is DocumentsUI, which cannot be uninstalled. Deleting the file exercises the same
 branch and the same rendering; the grant-held half is covered by unit tests.
 
+## Error states, verified on device (T23)
+
+Every failure was produced from a real file rather than a simulated one, and
+timed — a cap that only trips after a long parse is a slow error screen, which is
+a user-facing cost.
+
+| File | Result | Time to the screen |
+|---|---|---|
+| A genuinely password-protected `.xlsx` | **Encrypted** | 602 ms |
+| A truncated `.xlsx` (first 3 KB of a real one) | **Corrupted** | 594 ms |
+| A real OpenDocument spreadsheet renamed to `.xlsx` | **Corrupted** | 574 ms |
+| 60,000 × 20 = 1.2 M cells | **TooLarge**, stopped at 1,004,000 cells | 5.5 s |
+| A `file://` URI Darcha has no permission for | **Unreadable** | 670 ms |
+
+No crashes in any of it.
+
+**The password-protected file is real.** msoffcrypto-tool 5.4.2 encrypted a
+fixture with ECMA-376 agile encryption in a throwaway virtualenv — verified
+before use: OLE container, the right password decrypts it back to a `PK`
+archive, the wrong one is rejected. The venv and the file were deleted
+afterwards; neither is committed. To reproduce:
+
+```bash
+python3 -m venv /tmp/enc && /tmp/enc/bin/pip install msoffcrypto-tool
+/tmp/enc/bin/python -c "
+from msoffcrypto.format.ooxml import OOXMLFile
+src='core/parser/src/test/resources/fixtures/synthetic/values-basic.xlsx'
+OOXMLFile(open(src,'rb')).encrypt('darcha-test', open('/tmp/e-password.xlsx','wb'))"
+```
+
+**TooLarge takes 5.5 s, and that is inherent.** The cap counts cells as they
+stream, so it cannot fire until a million of them have been parsed — which is
+most of the work. Stopping earlier would mean trusting `<dimension>`, and our own
+`big-50k-rows.xlsx` has no `<dimension>` at all. The alternative to waiting is
+guessing wrong on exactly the largest files.
+
+**Known rough edge.** A renamed `.ods` reports "This file is damaged", when
+"not supported" would be truer — it is a real spreadsheet, just the wrong kind.
+Telling them apart means reading the ODF `mimetype` entry in `ContainerDetector`,
+which is `:core:parser`, frozen for this task. The acceptance matrix allows either
+answer; worth revisiting if the parser opens again.
+
 ## Time to first cell
 
 Measured in the ViewModel from the `OpenFile` intent to the `Ready` state — the
