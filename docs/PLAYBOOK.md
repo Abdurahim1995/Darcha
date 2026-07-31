@@ -52,7 +52,7 @@ Prerequisites in repo: `CLAUDE.md` (root), `docs/TECH_SPEC.md`, this file.
 > **M3 exit criteria — met.** The grid now renders what the file actually says: formatted values, cell styles, merged ranges, frozen panes, and zoom.
 
 **M4 — Product polish**
-- [x] T21 ACTION_VIEW · [x] T22 Recent files · [x] T23 Error UI · [x] T24 Icon+theme+UZ · 🧑 OWNER: GIFs · [x] T25 README+metrics · 🧑 OWNER: keystore · [~] T26 Release v1.0
+- [x] T21 ACTION_VIEW · [x] T22 Recent files · [x] T23 Error UI · [x] T24 Icon+theme+UZ · 🧑 OWNER: GIFs · [x] T25 README+metrics · 🧑 OWNER: keystore · [x] T26 Release v1.0 🎉
 
 > **T21 — DONE.** Darcha opens `.xlsx` from a file manager, cold start included. Verified on both managers the A31 has — system Files and Samsung My Files — and both reported the correct OOXML MIME, so the octet-stream/wildcard fallback never fired; neither URI contained `.xlsx` anywhere, which is exactly the pathPattern limit the manifest documents. A garbage file with an `.xlsx` name lands on the error screen from a cold start, no crash. **`ACTION_VIEW` grants are one-shot** — recorded in §9.1 and in the code, so T22 does not store URIs it can never reopen.
 >
@@ -66,7 +66,7 @@ Prerequisites in repo: `CLAUDE.md` (root), `docs/TECH_SPEC.md`, this file.
 >
 > **T26 — IN PROGRESS.** R8 and resource shrinking are on in the committed config; **1.088 MB unsigned, 1.10 MB signed**, against a 5 MB budget. No keep rules of our own are needed, and `app/proguard-rules.pro` records *why* rather than staying silently empty — nothing in `:core:*` reflects, and the one reflective-looking call resolves to a framework class R8 never packages. The T22 verification was **re-run against the shipping build** (T23 and T24 landed after it), including the error screen, which is the state resource shrinking could most plausibly have broken: it renders. Shrinking did drop `error_unsupported_*`, correctly — `ErrorKind.Unsupported` is declared but never constructed, so R8 proved the branch dead. That is the same gap as the known `.ods` rough edge, now with a landmine attached; recorded in `docs/PERF.md`. Signing reads `keystore.properties` from the project root: absent → unsigned (CI needs that), present but incomplete → **build fails** rather than quietly producing an unsigned APK. `docs/RELEASE.md` and `docs/RELEASE_NOTES_v1.0.0.md` are written.
 >
-> **Blocked on the owner:** the keystore does not exist yet, so the acceptance criterion — a *release-key* signed APK — is unmet. Verification used a debug-key copy of the identical release APK (signing does not alter the DEX). Flip to done after §1 of `docs/RELEASE.md` and one install of the real signed APK.
+> **T26 — DONE.** The owner's keystore now exists and `app-release.apk` is signed with it: `CN=Darcha, O=Darcha, C=UZ`, SHA-256 `219b4af8…`, v2 scheme, **1,149,310 bytes (1.096 MB)** against a 5 MB budget. Not the debug key — checked explicitly, and the APK was pulled back off the device to confirm the installed certificate is the same one. The debug build was uninstalled first, so the fixture run started from an empty DataStore: empty state → SAF pick → persistence across a force-stop → reopen, all verified in order, plus all seven fixtures, dates, styling, merges, frozen panes and three-sheet switching. Zero FATALs. Acceptance criterion met; `v1.0.0` tagged.
 
 ---
 

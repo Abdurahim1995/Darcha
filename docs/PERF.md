@@ -66,8 +66,23 @@ verification reported "no loads" for every file purely because of it.
 
 The run above was made at T22. T23 (error screens) and T24 (icon, Material 3,
 Uzbek) added code afterwards, so the verification was **repeated against the
-v1.0.0 build** rather than assumed to still hold — same method, a debug-key copy
-of the exact release APK, since signing does not alter the DEX.
+v1.0.0 build** rather than assumed to still hold — first with a debug-key copy of
+the exact release APK, then **again with the real release-signed APK** once the
+keystore existed.
+
+The final run is the one that closes T26's acceptance criterion. The debug build
+was uninstalled first (signatures differ), `app-release.apk` installed, and the
+APK pulled back off the device to confirm the certificate matches what was
+shipped:
+
+| | |
+|---|---|
+| Certificate DN | `CN=Darcha, O=Darcha, C=UZ` — **not** the debug key's `CN=Android Debug, O=Android, C=US` |
+| SHA-256 | `219b4af8516337c9ebae7f3fd31a321611913510a72841d50f400d60b4eda8bc` |
+| Same digest read back from `/data/app/…/base.apk` | ✓ |
+| Signature scheme | v2, `Verifies` at `--min-sdk-version 26` |
+| Certificate valid until | 2053 |
+| **Signed APK** | **1,149,310 bytes = 1.096 MB** |
 
 | Checked | Result |
 |---|---|
@@ -78,9 +93,15 @@ of the exact release APK, since signing does not alter the DEX.
 | Sheet switching, parsed on demand (T12) | works — tab 2 of `multisheet` loads its own content |
 | **Error screen (T23) in a shrunk build** | **renders — icon, title, body and action button all present** |
 | Localisation (T24) | the whole run was in Uzbek + dark; no missing or fallback strings |
-| Recents: persist, survive a force-stop, reopen | works — and the DataStore file written by the debug build was read by the shrunk one |
+| Recents: persist, survive a force-stop, reopen | works — on the release-signed run this started from an **empty** store (a fresh install after uninstall), so the empty state, a SAF pick, persistence and reopening were all exercised in order |
 | Two real-world business `.xlsx` files from the device | open and render, no crash |
 | FATAL exceptions across the whole run | **0** (`logcat -b crash` empty) |
+
+One note for whoever repeats this: on this device, **injected taps do not register
+in the system file picker**. Both the list and the search results ignore
+`input tap`; `input keyevent DPAD_DOWN … ENTER` works. That is a DocumentsUI
+quirk on this A31, not an app behaviour — the same taps drive Darcha's own UI
+fine.
 
 **Resource shrinking removed two strings, and it was right to.**
 `error_unsupported_title` and `error_unsupported_body` are not in the shipped
