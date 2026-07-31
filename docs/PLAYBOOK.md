@@ -1,4 +1,4 @@
-# Darcha — Full Build Playbook (M1 → M4, T0 → T26)
+# Darcha — Full Build Playbook (M1 → M5, T0 → T30)
 
 Every task below is a ready-to-paste Claude Code prompt. **One task = one session.** This file replaces `M1_PLAYBOOK.md`.
 
@@ -64,9 +64,16 @@ Prerequisites in repo: `CLAUDE.md` (root), `docs/TECH_SPEC.md`, this file.
 >
 > **T25 — DONE.** The README leads with a screenshot and the three numbers that matter, and says plainly what the app does *not* do before it lists what it does. The five "key decisions" this playbook drafted before any code existed were replaced by the six the codebase actually produced — progressive first paint (2,427 ms → 175 ms), merges as ranges rather than a covered-cell set, seams that cannot open because there is one number per axis, the dark-mode theme-colour substitution. Every figure was re-read out of `docs/PERF.md`, which corrected two: the frame times quoted here are the current build's, not T16's, and are reported as medians and 90th percentiles rather than as a "60 fps" claim the data does not support. Six device screenshots under `docs/images/` (228 KB) with a commented slot for the owner's GIF. The APK size stays marked provisional until T26 turns shrinking on. "How this was built" is preserved byte-identical.
 >
-> **T26 — IN PROGRESS.** R8 and resource shrinking are on in the committed config; **1.088 MB unsigned, 1.10 MB signed**, against a 5 MB budget. No keep rules of our own are needed, and `app/proguard-rules.pro` records *why* rather than staying silently empty — nothing in `:core:*` reflects, and the one reflective-looking call resolves to a framework class R8 never packages. The T22 verification was **re-run against the shipping build** (T23 and T24 landed after it), including the error screen, which is the state resource shrinking could most plausibly have broken: it renders. Shrinking did drop `error_unsupported_*`, correctly — `ErrorKind.Unsupported` is declared but never constructed, so R8 proved the branch dead. That is the same gap as the known `.ods` rough edge, now with a landmine attached; recorded in `docs/PERF.md`. Signing reads `keystore.properties` from the project root: absent → unsigned (CI needs that), present but incomplete → **build fails** rather than quietly producing an unsigned APK. `docs/RELEASE.md` and `docs/RELEASE_NOTES_v1.0.0.md` are written.
+> **T26 — DONE.** R8 and resource shrinking are on in the committed config. No keep rules of our own are needed, and `app/proguard-rules.pro` records *why* rather than staying silently empty — nothing in `:core:*` reflects, and the one reflective-looking call resolves to a framework class R8 never packages. Signing reads `keystore.properties` from the project root: absent → unsigned (CI needs that), present but incomplete → **build fails** rather than quietly producing an unsigned APK that looks signed.
 >
-> **T26 — DONE.** The owner's keystore now exists and `app-release.apk` is signed with it: `CN=Darcha, O=Darcha, C=UZ`, SHA-256 `219b4af8…`, v2 scheme, **1,149,310 bytes (1.096 MB)** against a 5 MB budget. Not the debug key — checked explicitly, and the APK was pulled back off the device to confirm the installed certificate is the same one. The debug build was uninstalled first, so the fixture run started from an empty DataStore: empty state → SAF pick → persistence across a force-stop → reopen, all verified in order, plus all seven fixtures, dates, styling, merges, frozen panes and three-sheet switching. Zero FATALs. Acceptance criterion met; `v1.0.0` tagged.
+> `app-release.apk` is signed with the owner's key: `CN=Darcha, O=Darcha, C=UZ`, SHA-256 `219b4af8…`, v2 scheme, **1,149,310 bytes (1.096 MB)** against a 5 MB budget. Not the debug key — checked explicitly, and the APK was pulled back off the device to confirm the installed certificate is the same one. The T22 R8 verification was **re-run against the shipping build** twice (T23 and T24 landed after it): once debug-signed, then again release-signed. Because the debug build had to be uninstalled first, the final run started from an empty DataStore — empty state → SAF pick → persistence across a force-stop → reopen, all in order — plus every fixture, dates, styling, merges, frozen panes and three-sheet switching. Zero FATALs.
+>
+> Shrinking dropped `error_unsupported_*`, correctly: `ErrorKind.Unsupported` is declared but never constructed, so R8 proved the branch dead. That is the same gap as the known `.ods` rough edge, now with a landmine attached — **T27 owns both halves.** `docs/RELEASE.md` and `docs/RELEASE_NOTES_v1.0.0.md` are written; `v1.0.0` tagged.
+>
+> **M4 exit criteria — met. v1.0.0 shipped.** 🎉
+
+**M5 — v1.1**
+- [ ] T27 .ods → Unsupported · [ ] T28 Theme colour vs black · [ ] T29 Selection + copy · [ ] 🧑 OWNER: producer fixtures · [ ] T30 Corpus lock
 
 ---
 
@@ -517,4 +524,160 @@ Acceptance: README renders cleanly on GitHub; no placeholder text left except th
 - Fill the APK size into README.
 
 Acceptance: signed release APK installs on a device and opens the full fixture set. v1.0 shipped 🎉
+```
+
+---
+
+# M5 — v1.1
+
+**Scope decision: small and finishable.** Four tasks, each independently
+shippable. In-sheet **search is deliberately deferred to v1.2** — it is the
+larger of the two usability gaps and dragging it in here would turn a tidy
+milestone into an open-ended one. Charts/images and the DOCX viewer are their
+own milestones and are not in scope.
+
+**`:core:parser` is UNFROZEN for T27 and T28 only**, under the same conditions as
+T15.6:
+
+- **Additive changes.** No existing public behaviour changes as a side effect.
+- Existing core tests may be **inverted only when the contract genuinely
+  changed**, and the rename must state the new contract. **Never loosened to make
+  a failure go away.** If a test needs editing for any other reason, stop and say
+  so.
+- Every fixture-backed golden value stays read from the file, never typed.
+
+`:core:parser` is frozen again for T29 and T30.
+
+## T27 — .ods detection → Unsupported
+
+```text
+A real OpenDocument spreadsheet renamed to .xlsx reports "This file is damaged"
+(ErrorKind.Corrupted). It is an intact spreadsheet, just the wrong kind, and
+ErrorKind.Unsupported already exists and is documented for exactly this case —
+nothing has ever constructed it.
+
+- ContainerDetector reads the ODF `mimetype` entry: in an .ods it is the FIRST
+  zip entry and is STORED, not deflated, so it can be identified cheaply and
+  without decompressing the archive. Return Unsupported, not Corrupted.
+- Decide and state what happens for .xlsb and other recognizable-but-unsupported
+  containers, rather than leaving a second silent gap behind this one.
+
+CRITICAL — the two halves must land in the SAME task:
+Resource shrinking removed error_unsupported_title and error_unsupported_body
+from the v1.0.0 APK, correctly: R8 proved the ErrorScreen branch unreachable
+because the kind was never constructed. The moment the parser starts producing
+it, those strings must be reachable again. Ship one without the other and the
+release build shows a BLANK error screen while debug looks perfectly fine —
+the worst class of bug, invisible until a user hits it.
+
+- Restore/confirm both strings in values/ AND values-uz/, and keep them within
+  ErrorCopyTest's word-boundary rules (no internals: no "OOXML", no "ZIP", no
+  "ErrorKind", no ".ods" jargon the reader does not need).
+- Fixture: a real .ods renamed to .xlsx, committed under fixtures/synthetic/
+  (or its own producer folder), described in FIXTURES.md, with a golden test.
+- Verify on a SIGNED RELEASE build, not just debug: aapt2 dump resources must
+  show both strings present, and the error screen must render on device.
+- Update docs/PERF.md (the error matrix row currently says Corrupted, and the
+  "known rough edge" paragraph) and docs/RELEASE_NOTES — this closes a limit
+  that v1.0.0 shipped with.
+
+Acceptance: renamed .ods reports "not supported" on a signed release build;
+aapt2 confirms the strings survive shrinking; golden test on the fixture.
+```
+
+## T28 — Theme colour vs explicit black
+
+```text
+Every real Excel file writes <color theme="1"/> for ordinary text. Theme 1 is
+"window text", not black — but the parser resolves it to black as a documented
+v1 fallback (§7), so by the time a style reaches the renderer, "the default
+text colour" and "deliberately black" are the same value and cannot be told
+apart. T24 worked around this with a near-black heuristic in dark mode.
+
+Carry the distinction properly instead:
+
+- The model represents "theme text colour" as its own thing, distinct from an
+  explicit RGB that happens to be black. Additive — existing consumers of the
+  resolved colour keep working.
+- The renderer then substitutes on the real distinction, and the near-black
+  heuristic in GridColors.shouldSubstitute goes away. Delete the workaround;
+  do not leave both paths in place.
+- This fixes the INVERSE case too, which the heuristic cannot: white text on an
+  unfilled cell is invisible in LIGHT mode today. A file authored for a dark
+  background is as legitimate as one authored for a light one.
+- The "never substitute on a filled cell" rule stays: black on the author's
+  yellow is a deliberate pairing and must survive.
+- Reading the actual workbook theme part (xl/theme/theme1.xml) is a separate
+  question. Decide whether T28 needs it or whether the theme-vs-explicit flag is
+  enough on its own, and write down which and why — do not half-do it.
+
+Acceptance: a fixture with explicit black text and a fixture with theme-default
+text render differently in dark mode; white-on-unfilled is readable in light
+mode; the near-black heuristic is gone from the renderer.
+```
+
+## T29 — Cell selection and copy
+
+```text
+TapCell was built in T18 (merged cells map covered → anchor via anchorOf) and
+deliberately left unwired for v1.0. Wire it.
+
+- Tap selects a cell; the selection is drawn clearly at any zoom.
+- A tap anywhere inside a merged range selects the ANCHOR, not the covered
+  cell — that is what anchorOf already returns; the selection outline must
+  follow the merged bounds, not one cell of it.
+- The selected cell's value can be copied to the clipboard. Decide and state
+  WHICH value: the displayed text (what the user sees, formatted) or the raw
+  value. One of them, documented, not both silently.
+- Keep the MVI discipline: selection is state, produced by reduce, not held in
+  the Canvas.
+- Frozen panes: a tap in each of the four regions must select the right cell.
+  The regions have translated origins, so this is where hit-testing breaks.
+- No text SELECTION inside a cell (dragging across characters) — that is a
+  different feature and belongs with search in v1.2. Say so in the commit so it
+  is not read as an oversight.
+
+TECH_SPEC §14 currently lists "text selection & copy" as post-v1. Update the
+spec: cell selection and copy are v1.1 scope now, and in-cell text selection
+stays post-v1.
+
+Acceptance: tap-to-select works in all four pane regions and on merged ranges;
+copy puts the documented value on the clipboard; verified on device.
+```
+
+## 🧑 OWNER — before T30
+
+```text
+The corpus is "grouped by producer", but only two folders are filled:
+excel/ (Microsoft Excel Online, golden-locked) and synthetic/ (openpyxl plus
+one hand-crafted file). gsheets/, libreoffice/ and wps/ are empty.
+
+Produce the same small workbook from each tool you can reach — Google Sheets
+export first, then LibreOffice Calc and WPS Office if available — following
+docs/FIXTURE_RECIPES.md. Values, dates, a few styles, one merge, one frozen
+pane. Do not re-save any file through another application: that destroys the
+producer identity that makes it worth having.
+
+Validate before handing over:  python3 tools/check_fixtures.py
+```
+
+## T30 — Fill the fixture corpus
+
+```text
+Lock whatever the new producer files actually contain.
+
+- Golden tests per producer, values READ OUT OF the committed files. Never typed
+  from memory, never copied from the excel/ expectations on the assumption that
+  two producers agree — the whole point is that they do not.
+- FIXTURES.md documents each file and the divergences it captures. Where a
+  producer differs from Excel or openpyxl, say WHAT differs; that paragraph is
+  the actual deliverable, not the file count.
+- If a new file breaks the parser: add it as a FAILING test first, then fix.
+  A parser fix here reopens :core:parser — stop and ask before touching it.
+- If a producer turns out to be unreachable, say so in FIXTURES.md and leave the
+  folder empty rather than filling it with a re-saved impostor.
+
+Acceptance: every non-empty producer folder is golden-locked and described;
+README's "half the corpus comes from Microsoft Excel Online" line is updated to
+match reality.
 ```
