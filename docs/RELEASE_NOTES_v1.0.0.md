@@ -59,7 +59,8 @@ two rough edges worth naming.
 - **An `.ods` renamed to `.xlsx` reports "This file is damaged"**, when "not
   supported" would be truer — it is a real spreadsheet, just the wrong kind.
   Telling the two apart means reading the OpenDocument `mimetype` entry, which is
-  a parser change deliberately left out of v1.
+  a parser change deliberately left out of v1. *(Fixed after this release, in
+  T27 — v1.0.0 itself still behaves as described above.)*
 
 ## Verifying this build
 

@@ -9,6 +9,10 @@ import java.io.InputStream
  * Recognized binary container of a candidate spreadsheet file (TECH_SPEC §7
  * step 1). Only [ZIP] is a readable OOXML `.xlsx`; [OLE] is reported to callers
  * as [ErrorKind.Encrypted].
+ *
+ * An OpenDocument package is a ZIP too, but it never reaches callers as a
+ * [Container] — it is turned into [ErrorKind.Unsupported] inside the detector,
+ * so there is no state here that means "recognized but unusable".
  */
 internal enum class Container {
     /** ZIP / OOXML package. Magic `50 4B 03 04`. */
@@ -19,14 +23,25 @@ internal enum class Container {
 }
 
 /**
- * Classifies a file by its leading magic bytes before any ZIP or XML parsing is
+ * Classifies a file by its leading bytes before any ZIP or XML parsing is
  * attempted (TECH_SPEC §7 step 1). This is the first gate of the pipeline: it
  * turns an unknown blob into either "proceed" or a precise [ErrorKind].
  *
  * Mapping:
+ * - ZIP magic + ODF `mimetype` → [ParseResult.Err] of [ErrorKind.Unsupported] (T27)
  * - ZIP magic  → [ParseResult.Ok] of [Container.ZIP] (safe to proceed)
  * - OLE magic  → [ParseResult.Err] of [ErrorKind.Encrypted]
  * - otherwise  → [ParseResult.Err] of [ErrorKind.Corrupted] (garbage, empty, too short)
+ *
+ * **What this gate cannot do, deliberately.** `.xlsb`, `.docx` and `.pptx` are
+ * all OOXML ZIPs whose only discriminator is `[Content_Types].xml` — a part
+ * whose position is recorded in the central directory at the *end* of the
+ * archive. Identifying them means opening the archive, which is exactly the cost
+ * this gate exists to avoid, so it stays out of here. Today an `.xlsb` reaches
+ * [WorkbookParser] and is reported as [ErrorKind.Corrupted] on the missing
+ * `xl/workbook.xml`, which is the wrong word for an intact file; the honest home
+ * for that check is [WorkbookParser], where the `ZipFile` is already open. Not
+ * fixed here, and not silently ignored either — see `docs/PERF.md`.
  *
  * Never throws: I/O failures on the [File]/[InputStream] overloads are mapped to
  * [ErrorKind.Corrupted], preserving the underlying exception message.
@@ -42,8 +57,16 @@ internal object ContainerDetector {
         0xA1.toByte(), 0xB1.toByte(), 0x1A, 0xE1.toByte(),
     )
 
-    /** Leading bytes needed to distinguish every recognized container. */
-    private const val HEADER_LEN: Int = 8
+    /**
+     * Leading bytes read to distinguish every recognized container.
+     *
+     * Eight would settle ZIP vs OLE. The rest exists for the ODF check below: an
+     * OpenDocument media type sits at byte 38 and the longest one in practice
+     * runs to about byte 95, so 128 covers it with room to spare. This is still
+     * a single short read of the first page of the file — the same cost as
+     * reading 8 bytes — and specifically *not* an archive open.
+     */
+    private const val HEADER_LEN: Int = 128
 
     /**
      * Detect from an in-memory prefix. Only the first [HEADER_LEN] bytes are
@@ -51,7 +74,10 @@ internal object ContainerDetector {
      */
     fun detect(bytes: ByteArray): ParseResult<Container> =
         when (classify(bytes)) {
-            Container.ZIP -> ParseResult.Ok(Container.ZIP)
+            Container.ZIP -> when (val odf = odfMediaType(bytes)) {
+                null -> ParseResult.Ok(Container.ZIP)
+                else -> ParseResult.Err(ErrorKind.Unsupported("OpenDocument package: $odf"))
+            }
             Container.OLE -> ParseResult.Err(
                 ErrorKind.Encrypted("OLE/CFB container: password-protected .xlsx or legacy .xls"),
             )
@@ -93,6 +119,89 @@ internal object ContainerDetector {
         bytes.startsWith(OLE_MAGIC) -> Container.OLE
         else -> null
     }
+
+    // --- OpenDocument detection (T27) ---
+
+    /** Every ODF media type starts here: spreadsheet, text, presentation, graphics. */
+    private const val ODF_MEDIA_PREFIX = "application/vnd.oasis.opendocument."
+
+    /** The first entry's name in a conforming ODF package. */
+    private val MIMETYPE_NAME = "mimetype".toByteArray(Charsets.US_ASCII)
+
+    /** Fixed field offsets inside a ZIP local file header (APPNOTE 4.3.7). */
+    private const val LFH_COMPRESSION = 8
+    private const val LFH_UNCOMPRESSED_SIZE = 22
+    private const val LFH_NAME_LEN = 26
+    private const val LFH_EXTRA_LEN = 28
+    private const val LFH_NAME = 30
+
+    /** Longest media type worth reading; anything beyond this is not an ODF type. */
+    private const val MAX_MEDIA_TYPE_LEN = 80
+
+    /**
+     * The ODF media type of [bytes], or `null` if this is not a conforming
+     * OpenDocument package.
+     *
+     * **Why this is a fixed-offset read and not an archive open.** OpenDocument
+     * v1.2 §3.3 requires that, when a `mimetype` entry is present, it is the
+     * *first* entry in the zip, is *stored* rather than deflated, and carries
+     * *no* extra field. Those three rules pin the media type to a known byte
+     * offset — 38 in practice — so a package can be identified from the same
+     * short header read that already distinguishes ZIP from OLE. Nothing here
+     * touches the central directory, inflates anything, or opens a `ZipFile`.
+     *
+     * The check is deliberately strict: every one of those rules is verified, and
+     * any deviation returns `null` rather than a guess. A file that declares
+     * itself ODF some other way (deflated mimetype, extra field, entry not first)
+     * therefore falls through to the normal pipeline and reports whatever it
+     * reported before — a missed detection, never a wrong one.
+     */
+    private fun odfMediaType(bytes: ByteArray): String? {
+        // A short prefix is a legitimate input: callers may pass only the magic.
+        // Too short to decide is "not ODF", never "malformed".
+        if (bytes.size < LFH_NAME + MIMETYPE_NAME.size) return null
+        if (bytes.readShortLE(LFH_COMPRESSION) != 0) return null // must be STORED
+        if (bytes.readShortLE(LFH_EXTRA_LEN) != 0) return null // must have no extra field
+        if (bytes.readShortLE(LFH_NAME_LEN) != MIMETYPE_NAME.size) return null
+        if (!bytes.regionMatches(LFH_NAME, MIMETYPE_NAME)) return null
+
+        val length = bytes.readIntLE(LFH_UNCOMPRESSED_SIZE)
+        if (length !in ODF_MEDIA_PREFIX.length..MAX_MEDIA_TYPE_LEN) return null
+        val start = LFH_NAME + MIMETYPE_NAME.size
+        if (start + length > bytes.size) return null
+
+        val mediaType = String(bytes, start, length, Charsets.US_ASCII)
+        return if (mediaType.startsWith(ODF_MEDIA_PREFIX)) mediaType else null
+    }
+}
+
+/** Read a little-endian unsigned 16-bit field at [offset]. */
+private fun ByteArray.readShortLE(offset: Int): Int =
+    (this[offset].toInt() and 0xFF) or ((this[offset + 1].toInt() and 0xFF) shl 8)
+
+/**
+ * Read a little-endian 32-bit field at [offset] as a non-negative [Int].
+ *
+ * ZIP sizes are unsigned; a value with the top bit set (≥ 2 GiB, or the 0xFFFFFFFF
+ * ZIP64 sentinel) would come back negative. Returning [Int.MAX_VALUE] there keeps
+ * the caller's range check meaningful instead of letting a negative length slip
+ * through as "small".
+ */
+private fun ByteArray.readIntLE(offset: Int): Int {
+    var value = 0L
+    for (i in 0 until 4) {
+        value = value or ((this[offset + i].toInt() and 0xFF).toLong() shl (8 * i))
+    }
+    return if (value > Int.MAX_VALUE) Int.MAX_VALUE else value.toInt()
+}
+
+/** True iff [other] appears in this array starting at [offset]. */
+private fun ByteArray.regionMatches(offset: Int, other: ByteArray): Boolean {
+    if (offset + other.size > size) return false
+    for (i in other.indices) {
+        if (this[offset + i] != other[i]) return false
+    }
+    return true
 }
 
 /** True iff this array is at least as long as [magic] and shares its prefix. */

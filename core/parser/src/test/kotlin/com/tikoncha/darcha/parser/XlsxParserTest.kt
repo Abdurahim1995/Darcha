@@ -112,6 +112,28 @@ class XlsxParserTest {
         assertTrue((result as ParseResult.Err).kind is com.tikoncha.darcha.model.ErrorKind.Encrypted)
     }
 
+    /**
+     * The T27 end-to-end: a renamed `.ods` reaching the public entry point comes
+     * back as [ErrorKind.Unsupported], and — just as importantly — the archive is
+     * never opened to find that out.
+     *
+     * This is also the test that keeps the release build honest. `Unsupported`
+     * was declared but never constructed in v1.0.0, so R8 proved the
+     * `ErrorScreen` branch unreachable and resource shrinking dropped its two
+     * strings from the APK. As long as a reachable path produces the kind, that
+     * chain stays alive. Do not delete this test to "simplify" the suite without
+     * checking `aapt2 dump resources` on a release build first.
+     */
+    @Test
+    fun open_renamedOds_isUnsupported_notCorrupted() {
+        val result = XlsxParser.open(fixtureFile("ods-renamed.xlsx"))
+        assertTrue(result is ParseResult.Err)
+        assertTrue(
+            "expected Unsupported, was ${(result as ParseResult.Err).kind}",
+            result.kind is com.tikoncha.darcha.model.ErrorKind.Unsupported,
+        )
+    }
+
     // --- helpers ---
 
     private fun open(name: String): Workbook =

@@ -83,7 +83,11 @@ Gesture / UI event → Intent → ViewModel (reduce) → State → Canvas render
 
 ### Pipeline (read order)
 
-1. **Container detection.** ZIP magic `PK\x03\x04` → proceed. OLE/CFB magic `D0 CF 11 E0` → the file is encrypted (or legacy `.xls`) → surface a clear user-facing error, never a crash.
+1. **Container detection.** ZIP magic `PK\x03\x04` → proceed. OLE/CFB magic `D0 CF 11 E0` → the file is encrypted (or legacy `.xls`) → surface a clear user-facing error, never a crash. A ZIP whose first entry is an OpenDocument `mimetype` → `Unsupported`, not `Corrupted`: it is an intact spreadsheet of the wrong kind, and saying "damaged" about it is simply false (T27).
+
+   The ODF check stays inside this step's budget — a single short header read, no archive open. OpenDocument v1.2 §3.3 requires the `mimetype` entry to be **first**, **stored**, and to carry **no extra field**, which pins the media type to byte 38. Every one of those rules is verified and any deviation is treated as "not ODF", so the check can miss but never misfire.
+
+   **Out of scope here, on purpose:** `.xlsb`, `.docx` and other OOXML ZIPs. Their only discriminator is `[Content_Types].xml`, reachable only through the central directory at the end of the archive, so identifying them costs an archive open — which is what this step exists to avoid. They continue to reach step 2 and report `Corrupted`. The honest home for that check is step 2, where the `ZipFile` is already open.
 2. `xl/workbook.xml` + `xl/_rels/workbook.xml.rels` → ordered sheet list (name, relId → part path), `date1904` flag.
 3. `xl/sharedStrings.xml` → shared string table, streamed. (Excel deduplicates text: cells store an index into this table.)
 4. `xl/styles.xml` → resolve `cellXfs` → font / fill / alignment / `numFmtId`. **Built-in number formats (ids 0–163) are not stored in the file** — the spec assumes them; we ship a hardcoded table.

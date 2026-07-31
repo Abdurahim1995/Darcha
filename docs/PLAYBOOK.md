@@ -73,7 +73,13 @@ Prerequisites in repo: `CLAUDE.md` (root), `docs/TECH_SPEC.md`, this file.
 > **M4 exit criteria — met. v1.0.0 shipped.** 🎉
 
 **M5 — v1.1**
-- [ ] T27 .ods → Unsupported · [ ] T28 Theme colour vs black · [ ] T29 Selection + copy · [ ] 🧑 OWNER: producer fixtures · [ ] T30 Corpus lock
+- [x] T27 .ods → Unsupported · [ ] T28 Theme colour vs black · [ ] T29 Selection + copy · [ ] 🧑 OWNER: producer fixtures · [ ] T30 Corpus lock
+
+> **T27 — DONE.** A renamed `.ods` now says "not supported" instead of "damaged". Detection stayed inside the header-read budget: OpenDocument v1.2 §3.3 pins the `mimetype` entry first, stored and extra-field-free, which puts the media type at byte **38** — so `HEADER_LEN` grew from 8 to 128 and nothing else changed. No `ZipFile`, no central directory, no inflation. The check is strict on all three rules and returns "not ODF" on any deviation, so it can miss but never misfire; six tests pin exactly that.
+>
+> **Both halves landed together, which was the whole point.** `aapt2` on the signed release APK shows `error_unsupported_title`/`_body` present in **both** locales, and the full source-vs-APK string diff is now empty where T26's had two missing. On device, the renamed `.ods` shows the ⓘ "not supported" screen while a truncated file still shows the ⚠ "damaged" one — the distinction survives shrinking, which a debug-only run could never have proved. APK grew 380 bytes.
+>
+> The fixture is hand-built to the spec (no LibreOffice on this machine) and its byte layout is asserted **independently of the detector**, at generation time and again in Kotlin — a fixture sharing an author with the code it tests proves nothing otherwise. `.xlsb` and other OOXML ZIPs still report "damaged" and are named as such in TECH_SPEC §7, `ContainerDetector`'s KDoc, FIXTURES.md and PERF.md rather than left as a second silent gap.
 
 ---
 

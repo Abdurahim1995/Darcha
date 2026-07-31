@@ -103,6 +103,25 @@ in the system file picker**. Both the list and the search results ignore
 quirk on this A31, not an app behaviour — the same taps drive Darcha's own UI
 fine.
 
+### T27 re-verification — the shrinking landmine, disarmed
+
+T26 left a live hazard: `error_unsupported_*` had been shrunk out of the APK
+because nothing constructed the kind. T27 makes the parser construct it, so the
+two halves had to be checked **together**, on a signed release build — a debug
+build would have looked correct either way and proved nothing.
+
+| Checked on the signed release APK | Result |
+|---|---|
+| `aapt2 dump resources` for `error_unsupported_title` / `_body` | **present** — and in both configs, `()` English and `(uz)` Uzbek |
+| Every string in `values/strings.xml` vs the shrunk APK | **all 25 present**; the T26 diff had two missing |
+| Renamed `.ods` on device | **"Bu turdagi fayl qo'llab-quvvatlanmaydi"** with the ⓘ icon |
+| Truncated `.xlsx` on device — the distinction must survive | still **"Bu fayl shikastlangan"** with the ⚠ icon, different words and different icon |
+| A normal `.xlsx` on device | opens and renders — no regression from the new header read |
+| FATAL exceptions | **0** |
+
+APK: 1,149,690 bytes — 380 bytes larger than v1.0.0, which is the two strings
+coming back plus the detection code.
+
 **Resource shrinking removed two strings, and it was right to.**
 `error_unsupported_title` and `error_unsupported_body` are not in the shipped
 APK. The cause is not a broken rule: `ErrorKind.Unsupported` is **declared in
@@ -165,6 +184,7 @@ a user-facing cost.
 | A genuinely password-protected `.xlsx` | **Encrypted** | 602 ms |
 | A truncated `.xlsx` (first 3 KB of a real one) | **Corrupted** | 594 ms |
 | A real OpenDocument spreadsheet renamed to `.xlsx` | **Corrupted** | 574 ms |
+| …the same case after T27 | **Unsupported** | — |
 | 60,000 × 20 = 1.2 M cells | **TooLarge**, stopped at 1,004,000 cells | 5.5 s |
 | A `file://` URI Darcha has no permission for | **Unreadable** | 670 ms |
 
@@ -190,11 +210,19 @@ most of the work. Stopping earlier would mean trusting `<dimension>`, and our ow
 `big-50k-rows.xlsx` has no `<dimension>` at all. The alternative to waiting is
 guessing wrong on exactly the largest files.
 
-**Known rough edge.** A renamed `.ods` reports "This file is damaged", when
-"not supported" would be truer — it is a real spreadsheet, just the wrong kind.
-Telling them apart means reading the ODF `mimetype` entry in `ContainerDetector`,
-which is `:core:parser`, frozen for this task. The acceptance matrix allows either
-answer; worth revisiting if the parser opens again.
+**~~Known rough edge~~ — fixed in T27.** A renamed `.ods` used to report "This
+file is damaged", which is untrue of an intact spreadsheet of the wrong kind. It
+now reports "not supported". The check costs one short header read, not an
+archive open: OpenDocument v1.2 §3.3 requires the `mimetype` entry to be first,
+stored and free of any extra field, which pins the media type to byte 38. See
+`ContainerDetector` and the `ods-renamed.xlsx` fixture.
+
+**Still reported as "damaged": `.xlsb`, `.docx` and other OOXML ZIPs.** They
+carry no fixed-offset marker — the discriminator is `[Content_Types].xml`, found
+only via the central directory at the end of the archive — so a header check
+cannot reach them and T27 deliberately did not try. The honest home for that is
+`WorkbookParser`, which already has the `ZipFile` open. Named here rather than
+left as a second silent gap behind the first.
 
 ## Themes and languages, verified on device (T24)
 

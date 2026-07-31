@@ -308,6 +308,112 @@ def gen_sparse_gaps() -> None:
     _save(wb, "sparse-gaps.xlsx")
 
 
+def gen_ods_renamed() -> None:
+    """A real OpenDocument spreadsheet carrying an .xlsx name (T27).
+
+    Darcha is offered for any file whose path ends in .xlsx (see the manifest's
+    pathPattern filters), so a renamed .ods genuinely reaches the app. It is an
+    intact spreadsheet of the wrong kind -- ErrorKind.Unsupported, not Corrupted.
+
+    Hand-built rather than exported, because no LibreOffice is available on the
+    machine that generated the corpus. It follows OpenDocument v1.2 section 3.3,
+    which is what ContainerDetector relies on:
+
+        * ``mimetype`` is the FIRST entry in the archive
+        * it is STORED (compress_type=0), never deflated
+        * it carries NO extra field
+
+    Those three rules put the media type at a fixed byte offset, which is why
+    detection costs one short read instead of opening the archive. The layout is
+    asserted byte-by-byte in ContainerDetectorTest rather than taken on trust --
+    a fixture built by the same author as the detector proves nothing otherwise.
+
+    Replace with genuine LibreOffice or Google Sheets output when T30 fills the
+    producer folders; the golden values should not change if this is right.
+    """
+    mimetype = b"application/vnd.oasis.opendocument.spreadsheet"
+    manifest = """<?xml version="1.0" encoding="UTF-8"?>
+<manifest:manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0" manifest:version="1.2">
+  <manifest:file-entry manifest:full-path="/" manifest:version="1.2" manifest:media-type="application/vnd.oasis.opendocument.spreadsheet"/>
+  <manifest:file-entry manifest:full-path="content.xml" manifest:media-type="text/xml"/>
+  <manifest:file-entry manifest:full-path="styles.xml" manifest:media-type="text/xml"/>
+</manifest:manifest>
+"""
+    content = """<?xml version="1.0" encoding="UTF-8"?>
+<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" office:version="1.2">
+  <office:body>
+    <office:spreadsheet>
+      <table:table table:name="Sheet1">
+        <table:table-row>
+          <table:table-cell office:value-type="string"><text:p>Nomi</text:p></table:table-cell>
+          <table:table-cell office:value-type="string"><text:p>Narxi</text:p></table:table-cell>
+        </table:table-row>
+        <table:table-row>
+          <table:table-cell office:value-type="string"><text:p>Olma</text:p></table:table-cell>
+          <table:table-cell office:value-type="float" office:value="5000"><text:p>5000</text:p></table:table-cell>
+        </table:table-row>
+      </table:table>
+    </office:spreadsheet>
+  </office:body>
+</office:document-content>
+"""
+    styles = """<?xml version="1.0" encoding="UTF-8"?>
+<office:document-styles xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" office:version="1.2"/>
+"""
+
+    path = OUT_DIR / "ods-renamed.xlsx"
+    with zipfile.ZipFile(path, "w") as zf:
+        # The mimetype entry FIRST and STORED, with no extra field. Written via an
+        # explicit ZipInfo so none of that is left to zipfile's defaults.
+        info = zipfile.ZipInfo("mimetype", date_time=_ZIP_DATE)
+        info.compress_type = zipfile.ZIP_STORED
+        info.extra = b""
+        zf.writestr(info, mimetype)
+
+        for part_name, text in (
+            ("META-INF/manifest.xml", manifest),
+            ("content.xml", content),
+            ("styles.xml", styles),
+        ):
+            part = zipfile.ZipInfo(part_name, date_time=_ZIP_DATE)
+            part.compress_type = zipfile.ZIP_DEFLATED
+            zf.writestr(part, text)
+
+    _assert_odf_layout(path, mimetype)
+    print(f"  wrote {path.relative_to(REPO_ROOT)}  (ODF package, .xlsx name)")
+
+
+def _assert_odf_layout(path, mimetype: bytes) -> None:
+    """Fail loudly unless the written file really has the ODF layout.
+
+    zipfile is free to add extra fields or pick a compression method; if it ever
+    does, the fixture would silently stop testing what it exists to test. Checked
+    here at generation time as well as in the Kotlin test, because a fixture that
+    quietly drifts is worse than no fixture.
+    """
+    head = path.read_bytes()[:128]
+    method = int.from_bytes(head[8:10], "little")
+    name_len = int.from_bytes(head[26:28], "little")
+    extra_len = int.from_bytes(head[28:30], "little")
+    declared = int.from_bytes(head[18:22], "little")
+    name = head[30:30 + name_len]
+    body = head[30 + name_len + extra_len:][:declared]
+
+    problems = []
+    if head[:4] != b"PK\x03\x04":
+        problems.append("not a ZIP local file header")
+    if method != 0:
+        problems.append(f"mimetype is compressed (method={method}), must be STORED")
+    if extra_len != 0:
+        problems.append(f"mimetype has a {extra_len}-byte extra field, must have none")
+    if name != b"mimetype":
+        problems.append(f"first entry is {name!r}, must be b'mimetype'")
+    if body != mimetype:
+        problems.append(f"media type at the fixed offset is {body!r}")
+    if problems:
+        raise SystemExit("ODF layout is wrong: " + "; ".join(problems))
+
+
 def gen_column_widths() -> None:
     """Custom column widths and row heights — the layout path (T15.6).
 
@@ -528,7 +634,8 @@ def main() -> None:
     gen_multisheet()
     gen_sparse_gaps()
     gen_column_widths()
-    print("Done: 9 fixtures generated.")
+    gen_ods_renamed()
+    print("Done: 10 fixtures generated.")
 
 
 if __name__ == "__main__":

@@ -60,6 +60,7 @@ Sheets to confirm real-app compatibility.**
 | `multisheet.xlsx` | synthetic (openpyxl) | Sheet order + non-ASCII names (T3) | 3 sheets, in order: `"Jadval 1"`, `"Narxlar"`, `"Ҳисобот"` (Cyrillic, UTF-8) |
 | `sparse-gaps.xlsx` | synthetic (openpyxl) | Sparsity — large gaps, no empty-cell allocation (T6) | Exactly **3** cells: `A1`="start", `C5`=42, `AA100`="end"; `<dimension>` claims `A1:AA100` (must be ignored) |
 | `column-widths.xlsx` | synthetic (openpyxl) | Custom column widths + row heights; the layout carried by each chunk (T7, T15.6) | Widths `A`=30, `C`=4.5, `D`=18 (`B` default); heights row 1=40, row 7=28; `<cols>` sits **before** `<sheetData>` |
+| `ods-renamed.xlsx` | synthetic (**hand-built ODF**) | An OpenDocument spreadsheet wearing an `.xlsx` name — `ErrorKind.Unsupported`, not `Corrupted` (T27) | `mimetype` is entry **0**, **STORED**, no extra field; media type `application/vnd.oasis.opendocument.spreadsheet` at byte **38**, length **46** |
 
 ## Detailed golden values
 
@@ -136,6 +137,42 @@ Two structural facts the chunk-layout design rests on, both true in this file:
 At `chunkSize = 3` the ten rows arrive as four chunks (rows `0-2`, `3-5`, `6-8`,
 `9`). Every chunk carries the full column widths; the height of row 0 rides in
 the first chunk and row 6's in the third.
+
+### `ods-renamed.xlsx`
+
+Not a workbook at all — an OpenDocument spreadsheet with `.xlsx` on the end of
+its name. It reaches the app for real: the manifest offers Darcha for any path
+ending in `.xlsx`, whatever the file actually is. v1.0.0 called it *damaged*,
+which is untrue of a perfectly intact spreadsheet; T27 made it *not supported*.
+
+Detection reads a short header rather than opening the archive, and that is only
+possible because OpenDocument v1.2 §3.3 pins three things:
+
+| Rule (ODF v1.2 §3.3) | Byte evidence in this file |
+|---|---|
+| `mimetype` is the **first** entry | local file header at offset `0`, name at `30` = `mimetype` |
+| it is **STORED**, never deflated | compression method at offset `8` = `0` |
+| it carries **no extra field** | extra length at offset `28` = `0` |
+| ⇒ the media type sits at a fixed offset | offset `38`, length `46` (declared at offset `22`) |
+
+`ContainerDetectorTest.odsFixture_hasTheLayoutTheSpecRequires` asserts each of
+those against the committed bytes — **independently of the detector**. That
+separation is the point: the fixture and the detector share an author, so
+"the detector accepts the fixture" would prove nothing on its own if both agreed
+on a layout no real ODF file uses.
+
+**Hand-built, and that is a limitation.** No LibreOffice was available on the
+machine that generated the corpus, so `tools/gen_fixtures.py` writes this package
+against the spec text (and re-checks the byte layout at generation time, so a
+future `zipfile` that starts adding extra fields fails loudly instead of quietly
+producing a fixture that no longer tests anything). It should be replaced with
+genuine LibreOffice or Google Sheets output when T30 fills the producer folders.
+If the golden values above change when that happens, this file was wrong.
+
+**Not covered by this fixture:** `.xlsb`, `.docx` and other OOXML ZIPs. They have
+no fixed-offset marker — the discriminator is `[Content_Types].xml`, reachable
+only through the central directory — so they are out of scope for a header check
+and still report `Corrupted`. See `ContainerDetector`'s KDoc and `docs/PERF.md`.
 
 ## Real-producer corpus — `excel/`
 
