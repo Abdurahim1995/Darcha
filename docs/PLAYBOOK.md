@@ -110,6 +110,10 @@ Prerequisites in repo: `CLAUDE.md` (root), `docs/TECH_SPEC.md`, this file.
 > Other producer variance recorded in FIXTURES.md: Google writes `<v>300.0</v>` for whole numbers, always emits `<sheetFormatPr>` with a 12.63 default width, omits empty rows **even when a merge references one**, ships a `drawing1.xml` per sheet with nothing in it, and declares Microsoft *Mac* namespaces it never uses. Two of those broke `tools/check_fixtures.py` too — its sheet-name regex assumed attribute order — and it was fixed rather than worked around.
 >
 > Two recipe deviations are left **reported, not accepted**: `12,5` typed with a comma (which turned out to be the most useful cell in the corpus — it locks that a comma decimal stays text) and two swapped city names. `libreoffice/` and `wps/` stay empty as documented placeholders. Tests 360 → 385.
+>
+> **M5 exit criteria — met. v1.1.0.** Three things v1.0.0 got *wrong* rather than three it was missing: a renamed `.ods` called damaged, dark mode guessing at text colour, and — found by the corpus itself — every Google Sheets frozen pane silently discarded. Plus cell selection and copy, the one feature. `versionCode 2`, `versionName 1.1.0`.
+>
+> The `check_fixtures.py` divergences are now **accepted rather than left red**, each with its reason printed on every run: a checker that stays red trains people to skim past it, and then the next real divergence goes unnoticed. `docs/FIXTURE_RECIPES.md` was corrected to match what the files actually contain — including an instruction to type the comma decimals deliberately, since that cell turned out to be the most useful one in the corpus.
 
 ---
 

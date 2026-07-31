@@ -116,13 +116,23 @@ Name the document itself with the target filename so the download lands correctl
 
 Target folder: `core/parser/src/test/resources/fixtures/gsheets/`
 
-Create three files, reusing the recipes above verbatim:
+Create three files, reusing the recipes above:
 
-- `values-basic.xlsx` — same content as A1
-- `merged-frozen.xlsx` — same as A4 (freeze via **View → Freeze → Up to row 2**, then **View → Freeze → Up to column A**)
-- `uzbek-text.xlsx` — same as A6
+- `values-basic.xlsx` — A1, **but type `12,5` and `0,75` with commas** (see below)
+- `merged-frozen.xlsx` — A4, one file covering both halves. Merge `A1:C1` and freeze via **View → Freeze → Up to row 2**. Note that "up to column A" freezes *no* columns in Google Sheets, so this file has `ySplit` only.
+- `uzbek-text.xlsx` — A6. The row order of Namangan and Farg'ona does not matter; goldens are read from the file.
 
-Same content, different producer, is exactly the point: any divergence between these files and Excel's is variance the parser must absorb.
+Same content, different producer, is exactly the point: any divergence between these files and Excel's is variance the parser must absorb — and it worked. These three files exposed a real parser bug the first time they were read (`ySplit="2.0"`, T30).
+
+### The comma decimals are deliberate
+
+Type `12,5` and `0,75` in B2 and B4 — **not** `12.5` and `0.75`, which is what the Excel recipe asks for.
+
+If the sheet's locale uses `.` as the decimal separator, Google Sheets will not recognise these as numbers and will store them as **text**. That is the point. It is how prices are written across this app's audience, it is what a real user's file will contain, and it locks the rule that matters: the parser reports what the file says rather than guessing what was meant. Re-typing them with dots would delete the most useful cell in the corpus.
+
+`tools/check_fixtures.py` prints both cells as accepted divergences (📌) on every run rather than passing them silently, so the decision stays visible.
+
+Column B of this file is therefore **not** a like-for-like comparison with `excel/values-basic.xlsx`; columns A and C still are.
 
 ---
 
