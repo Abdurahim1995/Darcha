@@ -73,13 +73,21 @@ Prerequisites in repo: `CLAUDE.md` (root), `docs/TECH_SPEC.md`, this file.
 > **M4 exit criteria — met. v1.0.0 shipped.** 🎉
 
 **M5 — v1.1**
-- [x] T27 .ods → Unsupported · [ ] T28 Theme colour vs black · [ ] T29 Selection + copy · [ ] 🧑 OWNER: producer fixtures · [ ] T30 Corpus lock
+- [x] T27 .ods → Unsupported · [x] T28 Theme colour vs black · [ ] T29 Selection + copy · [ ] 🧑 OWNER: producer fixtures · [ ] T30 Corpus lock
 
 > **T27 — DONE.** A renamed `.ods` now says "not supported" instead of "damaged". Detection stayed inside the header-read budget: OpenDocument v1.2 §3.3 pins the `mimetype` entry first, stored and extra-field-free, which puts the media type at byte **38** — so `HEADER_LEN` grew from 8 to 128 and nothing else changed. No `ZipFile`, no central directory, no inflation. The check is strict on all three rules and returns "not ODF" on any deviation, so it can miss but never misfire; six tests pin exactly that.
 >
 > **Both halves landed together, which was the whole point.** `aapt2` on the signed release APK shows `error_unsupported_title`/`_body` present in **both** locales, and the full source-vs-APK string diff is now empty where T26's had two missing. On device, the renamed `.ods` shows the ⓘ "not supported" screen while a truncated file still shows the ⚠ "damaged" one — the distinction survives shrinking, which a debug-only run could never have proved. APK grew 380 bytes.
 >
 > The fixture is hand-built to the spec (no LibreOffice on this machine) and its byte layout is asserted **independently of the detector**, at generation time and again in Kotlin — a fixture sharing an author with the code it tests proves nothing otherwise. `.xlsb` and other OOXML ZIPs still report "damaged" and are named as such in TECH_SPEC §7, `ContainerDetector`'s KDoc, FIXTURES.md and PERF.md rather than left as a second silent gap.
+>
+> **T28 — DONE.** `<color theme="1"/>` is `dk1` = `<a:sysClr val="windowText"/>` — a reference to the system's text colour, not a colour. The parser now returns `null` for it: *the document chose nothing*. `CellStyle.fontColor` never means black any more, and an author who wants black still gets a non-null `Color.BLACK`. **The T24 heuristic is deleted, not demoted** — `grep` for `shouldSubstitute`, `substituteNearBlackText` and `NEAR_BLACK` returns nothing.
+>
+> What replaced it is one rule in `TextLegibility`: honour what the document chose, unless it cannot be seen on a background *we* chose. Symmetric by construction, which is the point — white text on an unfilled cell had been invisible in **light** mode since v1.0, and near-black detection could never have found it. Never applies to a filled cell (there the document picked both colours), and the 1.5:1 threshold sits deliberately far below WCAG's design targets so that grey-on-white stays grey: this rescues legibility, it does not enforce contrast.
+>
+> **Decision recorded in TECH_SPEC §7 as the task required: `theme1.xml` is not read**, and the reason is that reading it would not change this outcome — `lt1`/`dk1` are `sysClr` references, so resolving them yields exactly the "let the renderer decide" the model now represents. What it *would* fix is themes 2–11, which are flattened to black today; that is a fidelity gap needing the index swap and `tint` handling, and it has its own pinned test so changing it stays deliberate.
+>
+> Verified on device in **both themes**, six cases each (One UI ignores `cmd uimode night`; the switch went through Display settings). The grey row is the one that matters: it stays dim in both, proving the rule is bounded. `styles-basic` re-checked as a regression guard. Tests 332 → 350.
 
 ---
 

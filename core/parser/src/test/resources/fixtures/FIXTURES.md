@@ -61,6 +61,7 @@ Sheets to confirm real-app compatibility.**
 | `sparse-gaps.xlsx` | synthetic (openpyxl) | Sparsity — large gaps, no empty-cell allocation (T6) | Exactly **3** cells: `A1`="start", `C5`=42, `AA100`="end"; `<dimension>` claims `A1:AA100` (must be ignored) |
 | `column-widths.xlsx` | synthetic (openpyxl) | Custom column widths + row heights; the layout carried by each chunk (T7, T15.6) | Widths `A`=30, `C`=4.5, `D`=18 (`B` default); heights row 1=40, row 7=28; `<cols>` sits **before** `<sheetData>` |
 | `ods-renamed.xlsx` | synthetic (**hand-built ODF**) | An OpenDocument spreadsheet wearing an `.xlsx` name — `ErrorKind.Unsupported`, not `Corrupted` (T27) | `mimetype` is entry **0**, **STORED**, no extra field; media type `application/vnd.oasis.opendocument.spreadsheet` at byte **38**, length **46** |
+| `text-contrast.xlsx` | synthetic (openpyxl) | "The document chose nothing" vs "the document chose black" — and the same question for backgrounds (T28) | `A1` theme=1 → `fontColor` **null**; `A2` `FF000000`; `A3` `FFFFFFFF`; `A4` black on `FFFFFF00`; `A5` white on `FF1F3864`; `A6` `FF999999` |
 
 ## Detailed golden values
 
@@ -137,6 +138,28 @@ Two structural facts the chunk-layout design rests on, both true in this file:
 At `chunkSize = 3` the ten rows arrive as four chunks (rows `0-2`, `3-5`, `6-8`,
 `9`). Every chunk carries the full column widths; the height of row 0 rides in
 the first chunk and row 6's in the third.
+
+### `text-contrast.xlsx`
+
+Six rows, each a different answer to one question: **did the document choose this
+colour, and did it also choose what sits behind it?** Golden values below were
+read out of the committed `xl/styles.xml`, not typed.
+
+| Cell | `s=` | Font in the file | `fontColor` | `fillColor` | Why it is here |
+|---|---|---|---|---|---|
+| `A1` | 1 | `<color theme="1"/>` | **`null`** | none | The common case — *every* real Excel file. Theme 1 is `dk1` = `<a:sysClr val="windowText"/>`, a reference to the system's text colour, so the document chose **nothing**. Resolving it to black is what made dark mode unreadable before T28. |
+| `A2` | 2 | `rgb="FF000000"` | `BLACK` | none | A real choice of black, against a background the document does not control. Invisible on our dark surface (1.09:1) → the renderer substitutes. |
+| `A3` | 3 | `rgb="FFFFFFFF"` | `WHITE` | none | The inverse, and **broken since v1.0**: invisible on our light surface (1.03:1). Nothing in the corpus had this case, which is why nobody noticed. |
+| `A4` | 4 | `rgb="FF000000"` | `BLACK` | `FFFFFF00` | The document chose **both**. Must render as written whatever the ratio. |
+| `A5` | 5 | `rgb="FFFFFFFF"` | `WHITE` | `FF1F3864` | The same, the other way round. |
+| `A6` | 6 | `rgb="FF999999"` | `999999` | none | Quiet on purpose (2.8:1 on light). Must **not** be "rescued" — that would rewrite the document rather than rescue it. |
+
+`A1` is what the parser change is about; `A2`/`A3` are what the renderer's
+contrast rule catches; `A4`–`A6` exist to prove neither mechanism overreaches.
+Two rows would have demonstrated the fix; it takes six to show it is bounded.
+
+Note `A1` and the sheet default share `<color theme="1"/>` — openpyxl writes two
+identical fonts (0 and 1) — so `table[0]` and `table[1]` both resolve to `null`.
 
 ### `ods-renamed.xlsx`
 

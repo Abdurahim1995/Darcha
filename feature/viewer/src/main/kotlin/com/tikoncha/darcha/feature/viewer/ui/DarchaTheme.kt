@@ -19,8 +19,6 @@ import androidx.compose.ui.graphics.Color
  * the theme too or dark mode stops at the edge of the sheet.
  *
  * @property cellText the colour for text the document does not colour itself.
- * @property substituteNearBlackText whether a near-black font colour on an
- *   unfilled cell should be replaced by [cellText] — see [shouldSubstitute].
  */
 @Immutable
 internal data class GridColors(
@@ -29,42 +27,7 @@ internal data class GridColors(
     val cellText: Color,
     val headerFill: Color,
     val headerText: Color,
-    val substituteNearBlackText: Boolean,
-) {
-    /**
-     * Whether a cell's own font colour should give way to [cellText].
-     *
-     * **Why this exists.** Every real Excel file writes `<color theme="1"/>` for
-     * ordinary text, and theme 1 is *"window text"* — not black. The parser
-     * resolves it to black as a documented v1 fallback (§7), so by the time a
-     * style reaches the renderer, "the default text colour" and "deliberately
-     * black" are the same value and cannot be told apart. Rendering that
-     * literally on a dark background makes almost every cell of almost every
-     * real file invisible: it is the common case, not an edge case.
-     *
-     * So in dark mode a near-black colour is read as *default* and replaced.
-     * Two limits keep that from damaging documents:
-     *
-     * - It never applies in light mode, where the literal colour is right anyway.
-     * - It never applies to a **filled** cell. Black on the author's yellow is a
-     *   deliberate pairing and stays; substituting there would put light text on
-     *   a light fill, which is worse than what it set out to fix.
-     *
-     * Distinguishing "theme text" from "explicit black" properly means carrying
-     * the distinction out of `:core:parser`, which is a change worth making the
-     * next time that module opens.
-     */
-    fun shouldSubstitute(fontColor: Color?, hasFill: Boolean): Boolean {
-        if (!substituteNearBlackText || hasFill) return false
-        if (fontColor == null) return true
-        return fontColor.red <= NEAR_BLACK && fontColor.green <= NEAR_BLACK && fontColor.blue <= NEAR_BLACK
-    }
-
-    private companion object {
-        /** Anything this dark reads as "default text" rather than a choice. */
-        const val NEAR_BLACK = 0.25f
-    }
-}
+)
 
 private val LightGrid = GridColors(
     gridLine = Color(0xFFD0D0D0),
@@ -72,7 +35,6 @@ private val LightGrid = GridColors(
     cellText = Color(0xFF202020),
     headerFill = Color(0xFFF2F2F2),
     headerText = Color(0xFF606060),
-    substituteNearBlackText = false,
 )
 
 private val DarkGrid = GridColors(
@@ -81,7 +43,6 @@ private val DarkGrid = GridColors(
     cellText = Color(0xFFE4E1E6),
     headerFill = Color(0xFF26232A),
     headerText = Color(0xFF9C97A4),
-    substituteNearBlackText = true,
 )
 
 internal val LocalGridColors = staticCompositionLocalOf { LightGrid }

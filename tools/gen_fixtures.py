@@ -308,6 +308,51 @@ def gen_sparse_gaps() -> None:
     _save(wb, "sparse-gaps.xlsx")
 
 
+def gen_text_contrast() -> None:
+    """The six font-colour cases a viewer with its own themes has to tell apart (T28).
+
+    Every row is a different answer to one question: did the document choose this
+    colour, and did it also choose what sits behind it?
+
+        A1  theme=1 text, no fill      -> chose NOTHING. sysClr windowText.
+                                         The common case: every real Excel file.
+        A2  explicit black, no fill    -> chose black, against a background it
+                                         does not control. Invisible in dark.
+        A3  explicit white, no fill    -> the inverse, invisible in LIGHT mode.
+                                         Broken since v1.0 and never noticed,
+                                         because nothing in the corpus had it.
+        A4  black on yellow fill       -> chose BOTH. Must render as written.
+        A5  white on dark-blue fill    -> chose both, the other way round.
+        A6  grey #999999, no fill      -> chose a quiet colour on purpose.
+                                         Must NOT be "rescued" into full contrast.
+
+    A1 is what T28 changed in the parser (theme 1 -> null, "no choice"). A2/A3
+    are what the renderer's contrast rule catches. A4/A5/A6 are the cases that
+    prove neither mechanism overreaches -- they are the reason this fixture has
+    six rows instead of two.
+    """
+    from openpyxl.styles import Color as XlColor
+
+    wb = _new_workbook()
+    ws = wb.active
+    ws["A1"] = "theme text"
+    ws["A1"].font = Font(color=XlColor(theme=1, tint=0.0))
+    ws["A2"] = "explicit black"
+    ws["A2"].font = Font(color="FF000000")
+    ws["A3"] = "explicit white"
+    ws["A3"].font = Font(color="FFFFFFFF")
+    ws["A4"] = "black on yellow"
+    ws["A4"].font = Font(color="FF000000")
+    ws["A4"].fill = PatternFill(start_color="FFFFFF00", end_color="FFFFFF00", fill_type="solid")
+    ws["A5"] = "white on navy"
+    ws["A5"].font = Font(color="FFFFFFFF")
+    ws["A5"].fill = PatternFill(start_color="FF1F3864", end_color="FF1F3864", fill_type="solid")
+    ws["A6"] = "quiet grey"
+    ws["A6"].font = Font(color="FF999999")
+    ws.column_dimensions["A"].width = 22
+    _save(wb, "text-contrast.xlsx")
+
+
 def gen_ods_renamed() -> None:
     """A real OpenDocument spreadsheet carrying an .xlsx name (T27).
 

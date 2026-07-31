@@ -103,6 +103,33 @@ in the system file picker**. Both the list and the search results ignore
 quirk on this A31, not an app behaviour — the same taps drive Darcha's own UI
 fine.
 
+### T28 — text colour, verified in both themes and both directions
+
+The T24 near-black heuristic is deleted, not demoted: `grep` for
+`shouldSubstitute`, `substituteNearBlackText` and `NEAR_BLACK` returns nothing.
+One mechanism decides text colour now.
+
+Checked on the A31 against `text-contrast.xlsx`, whose six rows are one case each.
+Both themes were exercised — One UI ignores `cmd uimode night`, so the switch was
+made through Display settings.
+
+| Row | Dark mode | Light mode |
+|---|---|---|
+| theme=1 text | light ✓ | dark ✓ |
+| explicit black, no fill | **rescued to light** ✓ | black, untouched ✓ |
+| explicit white, no fill | white ✓ | **rescued to dark** ✓ — broken since v1.0 |
+| black on yellow fill | black on yellow, untouched ✓ | same ✓ |
+| white on navy fill | white on navy, untouched ✓ | same ✓ |
+| grey `#999999`, no fill | visibly dimmer, **not** rescued ✓ | same ✓ |
+
+The grey row is the one that proves the rule is bounded. If it came out the same
+weight as the rows above it, the viewer would be enforcing contrast rather than
+rescuing legibility — rewriting the document instead of showing it.
+
+`styles-basic.xlsx` was re-checked in both themes as a regression guard, since it
+is the file T24's heuristic existed for: bold/italic/centre/right all legible,
+`Red` still red, and black-on-yellow still black. Zero crashes.
+
 ### T27 re-verification — the shrinking landmine, disarmed
 
 T26 left a live hazard: `error_unsupported_*` had been shrunk out of the APK

@@ -6,7 +6,13 @@ package com.tikoncha.darcha.model
  *
  * @property bold whether the font is bold.
  * @property italic whether the font is italic.
- * @property fontColor resolved font color, or `null` for default/automatic.
+ * @property fontColor the font colour the **document chose**, or `null` if it
+ *   chose none. `null` covers an absent or `auto` colour and a `theme` reference
+ *   that is itself a system-colour reference (`windowText`) — see TECH_SPEC §7.
+ *   It specifically does **not** mean black: an author who wants black produces
+ *   a non-null [Color.BLACK], and the two must stay distinguishable, because a
+ *   renderer may supply its own colour for the first and must not for the second
+ *   (T28).
  * @property fillColor resolved solid fill color, or `null` for no fill.
  * @property horizontalAlignment horizontal text alignment.
  * @property verticalAlignment vertical text alignment.

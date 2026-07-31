@@ -434,7 +434,7 @@ private fun DrawScope.drawRegion(
                     zoom = viewport.zoom,
                     textMeasurer = textMeasurer,
                     cache = cache,
-                    color = cellTextColor(style, colors),
+                    color = cellTextColor(style, colors, surface),
                     weight = style.fontWeight,
                     italic = style.fontStyle,
                     align = style.resolveAlignment(value),
@@ -661,16 +661,19 @@ private const val FREEZE_STROKE = 2f
 /**
  * What colour a cell's text is drawn in.
  *
- * The document wins wherever it has actually chosen — see
- * [GridColors.shouldSubstitute] for the single case where it does not, and why.
+ * The document wins wherever it actually chose. Where it chose nothing, the
+ * theme supplies a colour; where it chose something that cannot be seen on a
+ * background *we* picked, [TextLegibility] steps in. See that file for why those
+ * are two different situations and why only one mechanism now decides.
  */
-private fun cellTextColor(style: CellStyle, colors: GridColors): Color {
-    val own = style.fontColor?.toCompose()
-    return if (colors.shouldSubstitute(own, hasFill = style.fillColor != null)) {
-        colors.cellText
-    } else {
-        own ?: colors.cellText
-    }
+private fun cellTextColor(style: CellStyle, colors: GridColors, surface: Color): Color {
+    val fill = style.fillColor?.toCompose()
+    return TextLegibility.resolve(
+        own = style.fontColor?.toCompose(),
+        fallback = colors.cellText,
+        behind = fill ?: surface,
+        documentOwnsBackground = fill != null,
+    )
 }
 
 /** The last populated row and column of a sheet. */

@@ -73,7 +73,7 @@ Every number below comes from a **Samsung Galaxy A31** — a mid-range phone fro
 | Scroll frame time, 90th percentile | 18 ms / 23–30 ms |
 | Cells drawn per frame, whatever the sheet size | **259** |
 | APK, signed, R8 + resource shrinking | **1.10 MB** |
-| Tests | **319** |
+| Tests | **350** |
 
 **On frame times.** The 60 fps budget is 16.7 ms. The *median* frame fits inside
 it and the 90th percentile does not, so this page is not going to claim "60 fps"
@@ -108,7 +108,7 @@ graph LR
 
 Dependencies run one way only: `:app → :feature:viewer → :core:parser →
 :core:model`. The two `:core` modules have **no Android dependency at all** —
-they are plain JVM Kotlin, which is why 120 of the tests run in seconds on the
+they are plain JVM Kotlin, which is why 140 of the tests run in seconds on the
 JVM, with no emulator anywhere.
 
 State flows one way too: `Intent → reduce → State → render`, through a single
@@ -171,21 +171,27 @@ the separator line are all the same `Float`. They cannot disagree, because there
 is no rounding step between them in which to disagree. The tests assert it as
 exact equality — delta `0f` — at seven zoom levels.
 
-### 6. The dark-mode colour problem
+### 6. "The document chose nothing" is not the same as "the document chose black"
 
-Every real Excel file writes `<color theme="1"/>` for ordinary text. Theme 1
-means *window text*, not black — but resolving it properly needs the workbook
-theme, and the v1 fallback maps it to black. Rendered literally on a dark
-background, **almost every cell of almost every real file is invisible**. So in
-dark mode a near-black colour is read as "default" and replaced with the theme's
-text colour, bounded twice: never in light mode, and never on a filled cell,
-since black on the author's yellow is a deliberate pairing. It is the one place
-the viewer knowingly bends what the file says, and the reasoning is in the spec.
+Every real Excel file writes `<color theme="1"/>` for ordinary text. Theme 1 is
+`dk1`, which every Office theme defines as `<a:sysClr val="windowText"/>` — not a
+colour, but a reference to *the system's* text colour. The file has not picked
+black; it has declined to pick, and deferred to whatever draws it.
+
+v1.0 resolved it to black, so **almost every cell of almost every real file was
+invisible in dark mode**, and the first fix was a heuristic: treat near-black as
+"probably default". That guess is now deleted. The model records the distinction
+directly — `fontColor` is `null` when nothing was chosen, and never means black —
+so what remains is a measurement rather than a guess, and it runs in both
+directions. White text on an unfilled cell had been invisible in **light** mode
+since the first release, and no amount of near-black detection could have found
+it. A cell the document filled is never touched: there it chose both colours, and
+black on the author's yellow is a pairing, not an accident.
 
 ## Testing
 
-**319 tests** — 38 in `:core:model`, 82 in `:core:parser`, 199 in
-`:feature:viewer`. The 120 in `:core:*` are pure JVM and need no emulator.
+**350 tests** — 38 in `:core:model`, 102 in `:core:parser`, 210 in
+`:feature:viewer`. The 140 in `:core:*` are pure JVM and need no emulator.
 
 The parser is fixture-driven and the rule is absolute: **no fixture, no
 feature.** Every parser capability ships with a real `.xlsx` file and

@@ -163,25 +163,61 @@ stop at the edge of the sheet. Dynamic colour is deliberately unused: the
 wallpaper deciding what a gridline looks like would make the same spreadsheet
 read differently on two phones, and the sheet is the product.
 
-One rule bends a document, and only in dark mode. **Every real Excel file writes
-`<color theme="1"/>` for ordinary text**, and theme 1 means *window text*, not
-black — but §7's documented v1 fallback resolves it to black, so by the time a
-style reaches the renderer "the default colour" and "deliberately black" are the
-same value and cannot be told apart. Drawn literally on a dark background, almost
-every cell of almost every real file is invisible. It is the common case, not an
-edge case.
+### Text colour: what the document chose, and what it left to us (T28)
 
-So in dark mode a near-black font colour is read as *default* and replaced with
-the theme's text colour, bounded twice:
+**Every real Excel file writes `<color theme="1"/>` for ordinary text.** Theme
+index 1 is `dk1`, and in every Office theme `dk1` is written
+`<a:sysClr val="windowText"/>` — not a colour but a reference to *the system's*
+text colour. So the file has not chosen black; it has explicitly declined to
+choose, and deferred to whatever is drawing it.
 
-- **Never in light mode**, where the literal colour is right anyway.
-- **Never on a filled cell.** Black on the author's yellow is a deliberate
-  pairing; substituting there would put light text on a light fill, which is
-  worse than the problem it solves.
+The model records that. `CellStyle.fontColor` is `null` when the document chose
+nothing — absent, `auto`, or a system-colour theme reference — and non-null only
+when it really picked a value. **`null` never means black**, and an author who
+wants black gets `rgb="FF000000"` and a non-null `Color`. That single distinction
+is what T24's near-black heuristic was standing in for; the heuristic is deleted,
+not kept as a fallback.
 
-Doing this properly means carrying "theme text" through as distinct from
-"explicit black", which is a `:core:parser` change worth making the next time
-that module opens.
+Two things then decide, in order:
+
+1. **No choice → the theme's text colour.** Light or dark, whichever is running.
+2. **A choice → honour it, unless it cannot be seen on a background *we* chose.**
+   An unfilled cell has no background of its own; it shows the app's surface. So
+   a colour picked against Excel's white sheet can land on our dark surface, and
+   one picked against a dark sheet can land on our light one. Where the contrast
+   ratio falls below **1.5:1**, the theme's text colour is used instead.
+
+This is symmetric, and that matters: white text on an unfilled cell was invisible
+in **light** mode from v1.0 onward, and no amount of near-black detection could
+have found it.
+
+Bounded, so it rescues rather than rewrites:
+
+- **Never on a filled cell.** There the document chose *both* colours, so the
+  pairing is its own — black on the author's yellow stays black, white on the
+  author's navy stays white, whatever the ratio.
+- **Never as a contrast *enforcer*.** WCAG's 4.5:1 is a design target; applying
+  it here would override deliberate styling. Grey `#999999` on our light surface
+  measures 2.8:1 and is left alone. The threshold sits in the gap between
+  "invisible" (black on our dark surface is 1.09:1) and "quiet on purpose".
+
+#### Decision: `xl/theme/theme1.xml` is not read, and here is why
+
+Reading the theme part would be more faithful, and it is deliberately not done.
+
+The colours that cause the legibility problem — theme 0 and 1, `lt1` and `dk1` —
+are `sysClr` references in the theme file itself. Resolving them would yield
+`window` and `windowText`, which is precisely the "let whoever draws it decide"
+that the model now represents directly. **Parsing the theme part would not change
+the answer for the case this section is about.**
+
+What reading it *would* fix is different and narrower: theme indices 2–11 (`dk2`,
+`lt2` and the six accents) are fixed RGB, and the parser currently flattens all
+of them to black. That is a **fidelity** gap, not a legibility one — text is the
+wrong colour, but it is visible — and closing it needs the theme part, the
+`lt1`/`dk1` index swap, and `tint` handling, with fixtures for each. That is its
+own task, not a rider on this one. `StylesParserTest.themes2To11_areStillFlattenedToBlack_aKnownGap`
+pins the current behaviour so that changing it is a deliberate act.
 
 ### Localization (T24)
 

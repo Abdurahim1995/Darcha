@@ -162,9 +162,25 @@ internal object StylesParser {
     }
 
     /**
+     * OOXML theme index of `dk1` — `<a:sysClr val="windowText"/>`, the system's
+     * text colour. Note the indices are **not** the order the theme part
+     * declares its colours in: `lt1` and `dk1` are swapped.
+     */
+    private const val THEME_WINDOW_TEXT = 1
+
+    /** OOXML theme index of `lt1` — `<a:sysClr val="window"/>`. */
+    private const val THEME_WINDOW_BACKGROUND = 0
+
+    /**
      * Resolve a color element's attributes to ARGB. Order: explicit `rgb`, then
-     * `indexed` (standard palette), then `theme` (documented v1 fallback). An
-     * `auto`/empty color returns `null` (default).
+     * `indexed` (standard palette), then `theme` (see [themeFallback]).
+     *
+     * `null` means **the document chose nothing** — an absent or `auto` colour,
+     * or a theme reference that is itself a system-colour reference. It never
+     * means "black": an author who genuinely wants black gets `rgb="FF000000"`
+     * and a non-null [Color]. Keeping those two apart is what lets the renderer
+     * honour a real choice while supplying its own colour where none was made
+     * (T28).
      */
     private fun parseColor(parser: XmlPullParser): Color? {
         parser.getAttributeValue(null, "rgb")?.let { return rgbToColor(it) }
@@ -184,12 +200,32 @@ internal object StylesParser {
     }
 
     /**
-     * v1 theme-color fallback: theme 1 (window text) → black, theme 0 (window
-     * background) → white, all others → black. Full theme resolution is a
-     * post-v1 item (TECH_SPEC §7 traps).
+     * Resolve a `theme` color index (TECH_SPEC §7 "theme colours", T28).
+     *
+     * **Index 1 is `null` — "the document did not choose" — and that is the
+     * whole point.** In every Office theme, theme index 1 is `dk1`, written as
+     * `<a:sysClr val="windowText"/>`: not a colour at all, but a reference to
+     * *the system's window text colour*. Every real Excel file writes
+     * `<color theme="1"/>` for ordinary text, so resolving it to black would
+     * record a choice the author never made — and then a dark background makes
+     * almost every cell of almost every real file invisible. Returning `null`
+     * says what the file says: whoever draws this picks the colour.
+     *
+     * **Index 0 stays white**, because it is `lt1` — `<a:sysClr val="window"/>`,
+     * the *background* colour used as a font colour. Authors reach for it to
+     * reverse text out of a dark fill, so it is a real choice about contrast
+     * against that fill, and dropping it to `null` would break exactly the case
+     * it exists for.
+     *
+     * **Indices 2–11 remain black, which is still wrong.** They are fixed RGB
+     * values in `xl/theme/theme1.xml` (dk2 is a navy, the accents are real
+     * colours) and reading that part is the only way to get them right. That is
+     * a fidelity gap, not a legibility one, and it is deliberately out of scope
+     * here — see TECH_SPEC §7.
      */
-    private fun themeFallback(theme: Int): Color = when (theme) {
-        0 -> Color.WHITE
+    private fun themeFallback(theme: Int): Color? = when (theme) {
+        THEME_WINDOW_TEXT -> null
+        THEME_WINDOW_BACKGROUND -> Color.WHITE
         else -> Color.BLACK
     }
 
