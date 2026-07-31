@@ -23,18 +23,19 @@ TECH_SPEC §5 sets **< 5 MB**. Measured on the release variant:
 
 | Build | APK |
 |---|---|
-| Release as configured today (`isMinifyEnabled = false`) | **6.27 MB** — over the target |
-| Release with R8 + resource shrinking | **0.87 MB** (0.88 MB signed) |
+| Unshrunk, as configured before T26 (`isMinifyEnabled = false`) | **6.27 MB** — over the target |
+| Release with R8 + resource shrinking (T22 probe) | **0.87 MB** (0.88 MB signed) |
 | …plus DataStore and the recents list (T22) | **1.06 MB** (1.07 signed) — the new dependency cost ~190 KB shrunk |
+| **v1.0.0 as shipped (T23 + T24 included, shrinking committed)** | **1.088 MB unsigned, 1.10 MB signed** |
 
 Inside the shrunk APK: `classes.dex` 1.53 MB uncompressed, `resources.arsc`
 76 KB. The app carries no images, no fonts and no libraries beyond Compose and
 lifecycle, so almost all of the 6.27 MB was unreferenced framework code that R8
 removes.
 
-**The §5 target is comfortably reachable — 5.7× of headroom** — and the current
-overshoot is only because shrinking is not switched on yet. Worth knowing early
-rather than at release: there is room to spend, not a problem to solve.
+**Against the §5 target of 5 MB, v1.0.0 ships at 1.10 MB — 4.5× of headroom.**
+The error screens, adaptive icon and Uzbek locale added between the T22 probe and
+release cost about 40 KB in total.
 
 ### The shrunk build was then run, not just measured
 
@@ -60,6 +61,41 @@ exist in a shrunk build. That is the right behaviour for a shipped app, but it
 means **all performance measurement must be done on the debug build**, and a
 release run has to be verified by what is on screen. The first attempt at this
 verification reported "no loads" for every file purely because of it.
+
+### Re-verified against the shipping build (T26)
+
+The run above was made at T22. T23 (error screens) and T24 (icon, Material 3,
+Uzbek) added code afterwards, so the verification was **repeated against the
+v1.0.0 build** rather than assumed to still hold — same method, a debug-key copy
+of the exact release APK, since signing does not alter the DEX.
+
+| Checked | Result |
+|---|---|
+| `values-basic`, `excel-dates`, `styles-basic`, `merged`, `frozen-both`, `multisheet`, `big-50k` | all open and render correctly |
+| Number and date formatting (T16) | `01-15-24`, `13:30`, `1/15/24 13:30`, `12-31-24` — unchanged |
+| Styling in dark mode (T17, T24) | bold / italic / red text / yellow fill / centre + right align, all correct — including the near-black substitution, which leaves black-on-yellow alone |
+| Merged anchors, frozen panes after a scroll (T18, T19) | correct; the frozen column stays pinned with a clean seam |
+| Sheet switching, parsed on demand (T12) | works — tab 2 of `multisheet` loads its own content |
+| **Error screen (T23) in a shrunk build** | **renders — icon, title, body and action button all present** |
+| Localisation (T24) | the whole run was in Uzbek + dark; no missing or fallback strings |
+| Recents: persist, survive a force-stop, reopen | works — and the DataStore file written by the debug build was read by the shrunk one |
+| Two real-world business `.xlsx` files from the device | open and render, no crash |
+| FATAL exceptions across the whole run | **0** (`logcat -b crash` empty) |
+
+**Resource shrinking removed two strings, and it was right to.**
+`error_unsupported_title` and `error_unsupported_body` are not in the shipped
+APK. The cause is not a broken rule: `ErrorKind.Unsupported` is **declared in
+`:core:model` but never constructed anywhere in the app**, so R8 proved the
+`ErrorScreen` branch unreachable and the shrinker then dropped the two strings
+only that branch referenced. Confirmed by `aapt2 dump resources`; every other
+string, both locales, and both `string-array`s survived.
+
+That is correct shrinking, and it is also a finding: T23 built a screen that
+cannot appear. It is the same gap as the known rough edge below — a renamed
+`.ods` reports "damaged" because nothing ever produces `Unsupported`. **The
+landmine to remember:** if a future version starts emitting that kind, the screen
+will be blank in release builds until the strings become reachable again. The fix
+is to make the parser produce it, not to add a keep rule for dead copy.
 
 **Not covered: pinch zoom.** `sendevent` needs root and the A31 is retail, so a
 two-finger gesture cannot be injected (see "Focal-point stability" below). The

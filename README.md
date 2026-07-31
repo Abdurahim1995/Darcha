@@ -4,7 +4,7 @@
 [![INTERNET permission: none](https://img.shields.io/badge/INTERNET%20permission-none-success)](#no-network-by-construction)
 
 A fast, private, ad-free Android viewer for `.xlsx` files. It shows the first
-cells of a 50,000-row spreadsheet in **175 ms**, ships as a **1.06 MB** APK, and
+cells of a 50,000-row spreadsheet in **175 ms**, ships as a **1.10 MB** APK, and
 **cannot send your file anywhere** — there is no `INTERNET` permission in the
 manifest.
 
@@ -72,7 +72,7 @@ Every number below comes from a **Samsung Galaxy A31** — a mid-range phone fro
 | Scroll frame time, median — release build / debug build | **12 ms** / 15–18 ms |
 | Scroll frame time, 90th percentile | 18 ms / 23–30 ms |
 | Cells drawn per frame, whatever the sheet size | **259** |
-| APK, R8 + resource shrinking | **1.06 MB** |
+| APK, signed, R8 + resource shrinking | **1.10 MB** |
 | Tests | **319** |
 
 **On frame times.** The 60 fps budget is 16.7 ms. The *median* frame fits inside
@@ -82,10 +82,12 @@ are flagged as high-input-latency whatever the renderer does, and the device
 drifts thermally over a long session — `docs/PERF.md` records both, and says
 where that made one comparison inconclusive.
 
-**On the APK.** 1.06 MB is measured *and* run — the shrunk build was signed,
-installed and exercised across every fixture, needing no keep rules beyond AGP's
-defaults. It is marked **provisional** for one reason: shrinking is not yet
-switched on in the committed build config. That change is T26's.
+**On the APK.** 1.10 MB is the signed release build, with R8 and resource
+shrinking on in the committed config — against the spec's 5 MB budget. It needs
+**no keep rules of our own**: `:core:model` and `:core:parser` use no reflection
+and no serialization framework, so R8 can see the whole call graph.
+[`app/proguard-rules.pro`](app/proguard-rules.pro) is almost empty and explains
+why.
 
 ## Architecture
 
@@ -123,7 +125,9 @@ The six that shaped the codebase most.
 An `.xlsx` is a ZIP of XML parts, so the parser is `java.util.zip.ZipFile` plus
 `XmlPullParser` and nothing else — no Apache POI, which would have dwarfed
 everything else in the APK. It streams instead of building a DOM, so memory
-tracks the cells that exist rather than the size of the file.
+tracks the cells that exist rather than the size of the file. The payoff shows up
+at release time: with no reflection anywhere in `:core:*`, R8 can see the whole
+call graph, and the shipped APK needs **no keep rules at all**.
 
 ### 2. A sparse model on primitive arrays
 
@@ -213,7 +217,12 @@ Requires **JDK 17** and the Android SDK.
 ./gradlew build                                 # full build + all tests
 ./gradlew :core:model:test :core:parser:test    # fast pure-JVM tests
 ./gradlew :app:assembleDebug                    # debug APK
+./gradlew :app:assembleRelease                  # release APK, R8 + shrinking
 ```
+
+A release build is unsigned unless a `keystore.properties` is present — CI has no
+keystore and does not need one. [docs/RELEASE.md](docs/RELEASE.md) covers signing
+setup and the release checklist.
 
 ## Roadmap
 
