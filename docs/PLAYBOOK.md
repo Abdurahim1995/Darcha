@@ -73,7 +73,7 @@ Prerequisites in repo: `CLAUDE.md` (root), `docs/TECH_SPEC.md`, this file.
 > **M4 exit criteria — met. v1.0.0 shipped.** 🎉
 
 **M5 — v1.1**
-- [x] T27 .ods → Unsupported · [x] T28 Theme colour vs black · [x] T29 Selection + copy · [ ] 🧑 OWNER: producer fixtures · [ ] T30 Corpus lock
+- [x] T27 .ods → Unsupported · [x] T28 Theme colour vs black · [x] T29 Selection + copy · [x] 🧑 OWNER: producer fixtures · [x] T30 Corpus lock
 
 > **T27 — DONE.** A renamed `.ods` now says "not supported" instead of "damaged". Detection stayed inside the header-read budget: OpenDocument v1.2 §3.3 pins the `mimetype` entry first, stored and extra-field-free, which puts the media type at byte **38** — so `HEADER_LEN` grew from 8 to 128 and nothing else changed. No `ZipFile`, no central directory, no inflation. The check is strict on all three rules and returns "not ODF" on any deviation, so it can miss but never misfire; six tests pin exactly that.
 >
@@ -98,6 +98,18 @@ Prerequisites in repo: `CLAUDE.md` (root), `docs/TECH_SPEC.md`, this file.
 > A selection bar carries the copy button and the full value, which also solves a real viewer problem: a cell narrower than its contents is clipped in the grid, and this is the only place a long value can be read. `ContentCopy` lives in `material-icons-extended`, so it is a labelled button instead — no new dependency, and more discoverable anyway.
 >
 > Selection survives rotation (verified in landscape) and resets on sheet switch. Frame cost is not measurable: two back-to-back runs over `big-50k`, 24/32/36/65 ms without a selection against 23/31/36/61 ms with one. Tests 350 → 360.
+>
+> **T30 — DONE, and the corpus paid for itself on day one.** Three Google Sheets exports went into `gsheets/`, golden-locked in `GoogleSheetsFixturesTest.kt` with every value read out of the files — nothing copied from the `excel/` equivalents, which is the only reason the finding below was possible.
+>
+> **The finding: `ySplit="2.0"`.** Google Sheets writes pane splits as decimals; Excel writes integers. `"2.0".toIntOrNull()` is `null`, so the parser fell back to `0` and had been **silently discarding the frozen panes of every Google Sheets export** — no error, just a sheet that scrolled when it should not have. The failing test was written first and reported before any fix, exactly as CLAUDE.md requires.
+>
+> **The root cause was an assumption, so the fix is not one line.** ECMA-376 types `CT_Pane/@xSplit` and `@ySplit` as `xsd:double` — an unfrozen *split* pane can sit between rows — and we had assumed integer. An audit of every numeric attribute in the parser followed: ids and indices (`numFmtId`, `fontId`, `fillId`, `sheetId`, cell `s`, row `r`, `<col>` `min`/`max`, `indexed`, `theme`) really are `xsd:unsignedInt`; measurements (`width`, `ht`, `defaultColWidth`, `defaultRowHeight`) really are doubles and were already read as such. **The two pane splits were the only mismatch.** `String?.asWholeCount()` now carries the contract with the reasoning attached, so the bug cannot return one attribute at a time.
+>
+> A fractional split floors: you cannot freeze half a row, and freezing one the author never asked for is the worse error. Negatives clamp to zero, absurd values saturate rather than wrapping negative through `Int`.
+>
+> Other producer variance recorded in FIXTURES.md: Google writes `<v>300.0</v>` for whole numbers, always emits `<sheetFormatPr>` with a 12.63 default width, omits empty rows **even when a merge references one**, ships a `drawing1.xml` per sheet with nothing in it, and declares Microsoft *Mac* namespaces it never uses. Two of those broke `tools/check_fixtures.py` too — its sheet-name regex assumed attribute order — and it was fixed rather than worked around.
+>
+> Two recipe deviations are left **reported, not accepted**: `12,5` typed with a comma (which turned out to be the most useful cell in the corpus — it locks that a comma decimal stays text) and two swapped city names. `libreoffice/` and `wps/` stay empty as documented placeholders. Tests 360 → 385.
 
 ---
 

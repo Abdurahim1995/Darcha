@@ -39,7 +39,14 @@ class Sheet:
         self.zip = zipfile.ZipFile(path)
         self.strings = self._shared_strings()
         self.numfmts, self.fonts, self.fills, self.xfs = self._styles()
-        self.sheet_names = re.findall(r'<sheet name="([^"]*)"', self._part("xl/workbook.xml") or "")
+        # Attribute order is not guaranteed by XML and producers differ: Excel
+        # writes `<sheet name=... sheetId=...>`, Google Sheets writes
+        # `<sheet state="visible" name=...>`. Parse it rather than pattern-match
+        # the one spelling we happened to see first (T30).
+        wb = self._part("xl/workbook.xml")
+        self.sheet_names = (
+            [e.get("name") for e in ET.fromstring(wb).iter(f"{M}sheet")] if wb else []
+        )
         root = ET.fromstring(self._part("xl/worksheets/sheet1.xml"))
         self.merges = [m.get("ref") for m in root.iter(f"{M}mergeCell")]
         self.panes = [
@@ -152,10 +159,16 @@ def check_values_basic(s: Sheet) -> list[str]:
     names = [s.cells.get(f"A{r}", {}).get("value") for r in (2, 3, 4)]
     if names != ["Olma", "Anor", "Uzum"]:
         problems.append(f"A2:A4 must be Olma/Anor/Uzum, found {names}")
-    for ref, want in (("B2", "12.5"), ("B3", "300"), ("B4", "0.75")):
+    for ref, want in (("B2", 12.5), ("B3", 300.0), ("B4", 0.75)):
         got = s.cells.get(ref, {})
-        if got.get("type") not in (None, "n") or str(got.get("value")) != want:
-            problems.append(f"{ref} must be the number {want}, found {got.get('value')!r}")
+        # Compared as numbers: Excel writes <v>300</v> and Google Sheets writes
+        # <v>300.0</v>, and those are the same value (T30).
+        try:
+            same = got.get("type") in (None, "n") and float(got.get("value")) == want
+        except (TypeError, ValueError):
+            same = False
+        if not same:
+            problems.append(f"{ref} must be the number {want:g}, found {got.get('value')!r}")
     for ref, want in (("C2", True), ("C3", False), ("C4", True)):
         got = s.cells.get(ref, {})
         if got.get("type") != "b":
@@ -252,6 +265,38 @@ def check_frozen_both(s: Sheet) -> list[str]:
     return problems
 
 
+def check_merged_frozen(s: Sheet) -> list[str]:
+    """A4, whole: a merged title row AND a frozen header, in one file.
+
+    The Excel corpus splits this across merged.xlsx and frozen*.xlsx; the Google
+    Sheets recipe asks for one file covering both, so this is its own check
+    rather than a reuse of either (T30).
+    """
+    problems = []
+    header = [s.cells.get(c, {}).get("value") for c in ("A2", "B2", "C2")]
+    if header != ["Nomi", "Soni", "Narxi"]:
+        problems.append(f"A2:C2 must be Nomi/Soni/Narxi, found {header}")
+    if "A1:C1" not in s.merges:
+        problems.append(f"expected a merge of A1:C1, found {s.merges}")
+
+    frozen = [p for p in s.panes if p[2] == "frozen"]
+    if not frozen:
+        problems.append("no frozen pane — View > Freeze > Up to row 2")
+    else:
+        _, ysplit, _ = frozen[0]
+        # Read as a number, not a string: ECMA-376 types the splits xsd:double,
+        # so "2" and "2.0" both mean two frozen rows. Google Sheets writes the
+        # decimal form, and assuming the integer one is what broke the parser
+        # until T30.
+        try:
+            rows = float(ysplit or 0)
+        except ValueError:
+            rows = 0
+        if rows < 1:
+            problems.append(f"expected frozen rows, found ySplit={ysplit!r}")
+    return problems
+
+
 def check_dates(s: Sheet) -> list[str]:
     """A5: date/time values recognized as dates, not text."""
     problems = []
@@ -284,6 +329,7 @@ CHECKS = {
     "strings.xlsx": check_strings,
     "styles-basic.xlsx": check_styles_basic,
     "merged.xlsx": check_merged,
+    "merged-frozen.xlsx": check_merged_frozen,
     "frozen.xlsx": check_frozen,
     "frozen-both.xlsx": check_frozen_both,
     "dates.xlsx": check_dates,
@@ -293,7 +339,9 @@ CHECKS = {
 # Which files each producer folder is expected to contain.
 EXPECTED = {
     "excel": list(CHECKS),
-    "gsheets": ["values-basic.xlsx", "merged.xlsx", "uzbek-text.xlsx"],
+    # docs/FIXTURE_RECIPES.md asks Google Sheets for merged-frozen.xlsx (one file
+    # covering both), where the Excel corpus splits them.
+    "gsheets": ["values-basic.xlsx", "merged-frozen.xlsx", "uzbek-text.xlsx"],
     "wps": ["values-basic.xlsx", "strings.xlsx"],
     "numbers": ["values-basic.xlsx", "uzbek-text.xlsx"],
 }

@@ -215,12 +215,20 @@ internal object SheetParser {
         for (column in min..max) into[column - 1] = width // min/max are 1-based
     }
 
-    /** Read a `<pane>` element, returning frozen panes only when `state="frozen"`. */
+    /**
+     * Read a `<pane>` element, returning frozen panes only when `state="frozen"`.
+     *
+     * The splits go through [asWholeCount] rather than `toIntOrNull()` because
+     * ECMA-376 types them `xsd:double`: Excel writes `ySplit="2"`, Google Sheets
+     * writes `ySplit="2.0"`, and both are legal. Reading them as integers dropped
+     * every frozen pane in every Google Sheets export (T30).
+     */
     private fun readPane(parser: XmlPullParser): FrozenPanes? {
         if (parser.getAttributeValue(null, "state") != "frozen") return null
-        val xSplit = parser.getAttributeValue(null, "xSplit")?.toIntOrNull() ?: 0
-        val ySplit = parser.getAttributeValue(null, "ySplit")?.toIntOrNull() ?: 0
-        return FrozenPanes(frozenCols = xSplit, frozenRows = ySplit)
+        return FrozenPanes(
+            frozenCols = parser.getAttributeValue(null, "xSplit").asWholeCount(),
+            frozenRows = parser.getAttributeValue(null, "ySplit").asWholeCount(),
+        )
     }
 
     /** Build a [CellValue] from the cell's `t` type and captured text buffers. */

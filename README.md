@@ -74,7 +74,7 @@ Every number below comes from a **Samsung Galaxy A31** — a mid-range phone fro
 | Scroll frame time, 90th percentile | 18 ms / 23–30 ms |
 | Cells drawn per frame, whatever the sheet size | **259** |
 | APK, signed, R8 + resource shrinking | **1.10 MB** |
-| Tests | **360** |
+| Tests | **385** |
 
 **On frame times.** The 60 fps budget is 16.7 ms. The *median* frame fits inside
 it and the 90th percentile does not, so this page is not going to claim "60 fps"
@@ -109,7 +109,7 @@ graph LR
 
 Dependencies run one way only: `:app → :feature:viewer → :core:parser →
 :core:model`. The two `:core` modules have **no Android dependency at all** —
-they are plain JVM Kotlin, which is why 140 of the tests run in seconds on the
+they are plain JVM Kotlin, which is why 165 of the tests run in seconds on the
 JVM, with no emulator anywhere.
 
 State flows one way too: `Intent → reduce → State → render`, through a single
@@ -191,8 +191,8 @@ black on the author's yellow is a pairing, not an accident.
 
 ## Testing
 
-**360 tests** — 38 in `:core:model`, 102 in `:core:parser`, 220 in
-`:feature:viewer`. The 140 in `:core:*` are pure JVM and need no emulator.
+**385 tests** — 38 in `:core:model`, 127 in `:core:parser`, 220 in
+`:feature:viewer`. The 165 in `:core:*` are pure JVM and need no emulator.
 
 The parser is fixture-driven and the rule is absolute: **no fixture, no
 feature.** Every parser capability ships with a real `.xlsx` file and
@@ -202,15 +202,21 @@ the expectation was wrong.
 
 Fixtures are grouped **by the tool that produced them**, because producers
 disagree about how to write the same spreadsheet, and a parser tested only
-against its own output never finds that out. Half the corpus comes from
-Microsoft Excel Online and is golden-locked; the rest is generated with openpyxl,
-plus one file whose OOXML was written by hand — because openpyxl turns out to
-*never* emit a shared string table, so nothing else in the corpus would have
-exercised that path at all. Google Sheets, LibreOffice and WPS have folders
-waiting, and the checker that validates fixtures is read-only by design: re-saving
-a file through another application destroys the producer identity that made it
-worth having. Every fixture and its expected values are documented in
+against its own output never finds that out. Files from **Microsoft Excel
+Online** and **Google Sheets** sit alongside ones generated with openpyxl, plus
+one whose OOXML was written by hand — because openpyxl turns out to *never* emit
+a shared string table, so nothing else in the corpus would have exercised that
+path at all. LibreOffice and WPS have folders waiting. The checker that validates
+fixtures is read-only by design: re-saving a file through another application
+destroys the producer identity that made it worth having. Every fixture and its
+expected values are documented in
 [FIXTURES.md](core/parser/src/test/resources/fixtures/FIXTURES.md).
+
+This is not a formality. The first three Google Sheets files added to the corpus
+found a bug within minutes: Google writes a frozen pane as `ySplit="2.0"` where
+Excel writes `ySplit="2"`, and the parser — reading an integer where ECMA-376
+declares a double — had been **silently discarding the frozen panes of every
+Google Sheets export**. No file this project generated would ever have shown it.
 
 Behaviour that cannot be unit-tested is measured on real hardware and written
 down — including what could *not* be verified, and why:
