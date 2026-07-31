@@ -19,6 +19,10 @@ import androidx.compose.ui.graphics.Color
  * the theme too or dark mode stops at the edge of the sheet.
  *
  * @property cellText the colour for text the document does not colour itself.
+ * @property selection the selected cell's outline (T29). Drawn over the
+ *   document's own colours, so it has to read against any fill an author might
+ *   have used — hence the app's accent rather than anything derived from the
+ *   sheet.
  */
 @Immutable
 internal data class GridColors(
@@ -27,6 +31,7 @@ internal data class GridColors(
     val cellText: Color,
     val headerFill: Color,
     val headerText: Color,
+    val selection: Color,
 )
 
 private val LightGrid = GridColors(
@@ -35,6 +40,7 @@ private val LightGrid = GridColors(
     cellText = Color(0xFF202020),
     headerFill = Color(0xFFF2F2F2),
     headerText = Color(0xFF606060),
+    selection = Color(0xFF6750A4),
 )
 
 private val DarkGrid = GridColors(
@@ -43,6 +49,7 @@ private val DarkGrid = GridColors(
     cellText = Color(0xFFE4E1E6),
     headerFill = Color(0xFF26232A),
     headerText = Color(0xFF9C97A4),
+    selection = Color(0xFFD0BCFF),
 )
 
 internal val LocalGridColors = staticCompositionLocalOf { LightGrid }

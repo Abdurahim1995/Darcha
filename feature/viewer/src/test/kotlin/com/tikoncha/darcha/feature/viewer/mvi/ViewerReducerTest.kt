@@ -372,12 +372,64 @@ class ViewerReducerTest {
         assertSame(readyState, reduce(readyState, ViewerIntent.Fling(vx = 2_000f, vy = -800f)))
     }
 
-    // --- intents deferred to later tasks ---
+    // --- selection (T29) ---
+    //
+    // Replaces tap_leavesStateUnchangedForNow, which pinned the v1.0 contract:
+    // TapCell was declared and deliberately inert. T29 wires it, so the
+    // assertion is inverted rather than loosened — and the intent now carries a
+    // resolved cell, because screen pixels mean nothing without the geometry
+    // that produced them. See ViewerIntent.SelectCell.
 
     @Test
-    fun tap_leavesStateUnchangedForNow() {
+    fun selectCell_storesTheCell() {
         val readyState = ready()
-        assertSame(readyState, reduce(readyState, ViewerIntent.TapCell(x = 10f, y = 20f)))
+        val next = reduce(readyState, ViewerIntent.SelectCell(CellRef(row = 4, col = 2)))
+        assertEquals(CellRef(row = 4, col = 2), (next as ViewerState.Ready).selection)
+    }
+
+    @Test
+    fun selectCell_null_clearsTheSelection() {
+        // A tap on the header strips or past the last row lands nowhere, and
+        // clearing is the honest answer — better than leaving a stale outline on
+        // a cell the user is no longer pointing at.
+        val selected = reduce(ready(), ViewerIntent.SelectCell(CellRef(1, 1)))
+        val cleared = reduce(selected, ViewerIntent.SelectCell(null))
+        assertNull((cleared as ViewerState.Ready).selection)
+    }
+
+    @Test
+    fun selectCell_doesNotDisturbTheViewport() {
+        // Selecting must not scroll: the cell the user tapped has to stay under
+        // their finger.
+        val scrolled = reduce(ready(), ViewerIntent.Scroll(dx = 120f, dy = 60f)) as ViewerState.Ready
+        val selected = reduce(scrolled, ViewerIntent.SelectCell(CellRef(3, 3))) as ViewerState.Ready
+        assertEquals(scrolled.viewport, selected.viewport)
+    }
+
+    @Test
+    fun selectCell_isIgnoredWhenThereIsNoSheet() {
+        // Nothing to select on the error or parsing screens, and mapReady must
+        // not conjure a Ready state out of one.
+        assertSame(ViewerState.Idle, reduce(ViewerState.Idle, ViewerIntent.SelectCell(CellRef(0, 0))))
+    }
+
+    @Test
+    fun switchingSheet_clearsTheSelection() {
+        // A1 of the next sheet is not the cell that was selected on this one, so
+        // carrying the reference across would point at an unrelated value.
+        val selected = reduce(ready(), ViewerIntent.SelectCell(CellRef(2, 2)))
+        val switched = reduce(selected, ParseEvent.SheetLoaded(1, meta, SheetSnapshot.EMPTY))
+        assertNull((switched as ViewerState.Ready).selection)
+    }
+
+    @Test
+    fun selectionSurvivesScrollingAndZooming() {
+        // It lives in state, so a configuration change — which rebuilds the UI
+        // from this same state — cannot lose it either.
+        var state: ViewerState = reduce(ready(), ViewerIntent.SelectCell(CellRef(7, 1)))
+        state = reduce(state, ViewerIntent.Scroll(dx = 40f, dy = 40f))
+        state = reduce(state, ViewerIntent.Zoom(scale = 1.5f, focalX = 100f, focalY = 100f))
+        assertEquals(CellRef(row = 7, col = 1), (state as ViewerState.Ready).selection)
     }
 
     // --- full sequence ---

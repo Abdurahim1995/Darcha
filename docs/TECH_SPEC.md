@@ -155,6 +155,35 @@ Every boundary is derived from **one number per axis**: the frozen extent, `span
 Scrolling gains a **floor**: the scrolling region starts at the first unfrozen column, and letting scroll fall below that would draw the frozen columns a second time inside the body. The floor is clamped in two places on purpose — in the reducer via `ScrollBounds`, and again inside the region maths, because the renderer publishes the bounds *after* the first composition and the first frame would otherwise be drawn unclamped.
 - **Merged cells:** drawn once at the anchor cell spanning the merged bounds; covered cells are skipped.
 
+### Cell selection, and where a tap is resolved (T29)
+
+A tap selects a cell; the selection is drawn as an outline and its value can be
+copied. Three decisions are worth stating.
+
+**The renderer resolves the tap, not the reducer.** `ViewerIntent.SelectCell`
+carries a `CellRef`, not the tap's pixel, because a screen coordinate means
+nothing without the geometry that produced it — column widths, the zoom, and
+*which of the four frozen regions the point landed in*, each with its own origin.
+All of that lives in the renderer. The reducer stays a pure function with no
+layout in it (§10), exactly as `Fling` is resolved into `Scroll`s by the
+ViewModel: resolution happens wherever the knowledge is.
+
+**Hit-testing goes through the regions, and that is the whole difficulty.** After
+subtracting a region's origin and reading it with that region's viewport, the
+calculation is the ordinary unfrozen one — the same property the drawing code
+relies on. Get it wrong and a tap in the frozen corner silently returns the
+body's cell: a wrong answer that looks like a rendering bug. A tap inside a
+merged range resolves to the **anchor**, and the outline spans the whole range.
+
+**A touch during a fling stops it and selects nothing.** That is what every
+scrollable surface on the platform does, and the case that feels broken when it
+is missing. A tap that lands nowhere — the header strips, past the last row —
+clears the selection rather than guessing.
+
+Selection lives in `ViewerState.Ready`, so it survives rotation, and it resets on
+sheet switch because A1 of the next sheet is not the cell that was selected on
+this one.
+
 ### Theme, and the one place dark mode changes a document (T24)
 
 Material 3, light or dark by system setting, and the grid's own colours —
@@ -367,7 +396,7 @@ sealed interface ViewerIntent {
     data class Scroll(val dx: Float, val dy: Float) : ViewerIntent
     data class Fling(val vx: Float, val vy: Float) : ViewerIntent
     data class Zoom(val scale: Float, val focalX: Float, val focalY: Float) : ViewerIntent
-    data class TapCell(val x: Float, val y: Float) : ViewerIntent
+    data class SelectCell(val cell: CellRef?) : ViewerIntent  // resolved by the renderer, §9
     data object Retry : ViewerIntent
 }
 ```
@@ -423,7 +452,8 @@ only the second is worth a Retry button.
 ## 14. Future (post-v1 candidates)
 
 - DOCX viewer via HTML → WebView (a deliberate second rendering strategy)
-- Text selection & copy, in-sheet search
+- In-sheet search, and text selection *within* a cell — dragging across characters.
+  (Cell selection and copy shipped in v1.1, T29; §9 has the reasoning.)
 - Basic charts, embedded images
 - F-Droid publication
 

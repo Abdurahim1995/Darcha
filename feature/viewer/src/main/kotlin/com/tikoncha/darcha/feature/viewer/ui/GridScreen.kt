@@ -24,9 +24,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tikoncha.darcha.feature.viewer.R
 import com.tikoncha.darcha.feature.viewer.data.SheetSnapshot
+import com.tikoncha.darcha.feature.viewer.mvi.CellRef
 import com.tikoncha.darcha.feature.viewer.mvi.DocumentMeta
 import com.tikoncha.darcha.feature.viewer.mvi.ScrollBounds
 import com.tikoncha.darcha.feature.viewer.mvi.Viewport
+import com.tikoncha.darcha.model.FormattedValueCache
 
 /**
  * The grid screen: the document header, the [GridCanvas], and the sheet tabs.
@@ -51,9 +53,25 @@ internal fun GridScreen(
     onResetZoom: (focalX: Float, focalY: Float) -> Unit,
     onBoundsChanged: (ScrollBounds) -> Unit,
     onSelectSheet: (Int) -> Unit,
+    selection: CellRef?,
+    onSelect: (CellRef?) -> Unit,
+    onStopMotion: () -> Boolean,
     modifier: Modifier = Modifier,
 ) {
     var drawnCells by remember { mutableIntStateOf(0) }
+
+    // The same formatter the Canvas draws with, so the bar can never disagree
+    // with the cell — see SelectionBar for why the *displayed* string is what
+    // gets copied.
+    val dateNames = rememberDateNames()
+    val formatted = remember(sheet.styles, sheet.sharedStrings, sheet.date1904, dateNames) {
+        FormattedValueCache(
+            styles = sheet.styles,
+            strings = sheet.sharedStrings,
+            date1904 = sheet.date1904,
+            names = dateNames,
+        )
+    }
 
     // Keep the chrome clear of the status and navigation bars.
     Column(modifier = modifier.fillMaxSize().systemBarsPadding()) {
@@ -86,7 +104,19 @@ internal fun GridScreen(
                 .fillMaxWidth()
                 .weight(1f),
             onDrawnCells = { drawnCells = it },
+            // A lambda, not a value: the Canvas reads it inside its draw block,
+            // so moving the selection repaints without recomposing this Column.
+            selection = { selection },
+            onSelect = onSelect,
+            onStopMotion = onStopMotion,
         )
+
+        if (selection != null) {
+            SelectionBar(
+                selection = selection,
+                displayText = sheet.displayTextAt(selection, formatted),
+            )
+        }
 
         // Either the first sheet is still streaming in (T15.5) or another tab is
         // being read on demand (T15). Both keep the grid on screen and show the
@@ -106,6 +136,30 @@ internal fun GridScreen(
             onSelectSheet = onSelectSheet,
         )
     }
+}
+
+/**
+ * The string shown for [cell] — exactly what the grid draws there.
+ *
+ * **Decision: the displayed text is what gets copied, not the raw value.** The
+ * user selected this cell by *looking* at it: a date cell holds the serial
+ * `45306`, and nobody who taps a cell reading `1/15/24` means to copy `45306`
+ * into a message. Darcha is a viewer with no editing and no export, so the
+ * spreadsheet-round-trip argument for raw values has nothing to round-trip into.
+ *
+ * The honest cost: `General` renders 11 significant digits, so copying a cell
+ * that shows `0.333333333333` gives those digits and not the underlying double.
+ * A value that is *displayed* rounded copies rounded. That follows from the same
+ * principle rather than contradicting it — what you see is what you get — but it
+ * is a real limitation and belongs written down rather than discovered.
+ *
+ * An empty cell yields `""`, and the bar's Copy button disables rather than
+ * putting an empty string on the clipboard.
+ */
+private fun SheetSnapshot.displayTextAt(cell: CellRef, formatted: FormattedValueCache): String {
+    val row = data.row(cell.row) ?: return ""
+    val value = row.valueAt(cell.col) ?: return ""
+    return formatted.format(value, row.styleIdAt(cell.col) ?: 0)
 }
 
 /**

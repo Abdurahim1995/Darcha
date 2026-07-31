@@ -110,6 +110,8 @@ class MainActivity : ComponentActivity() {
                         },
                         onBoundsChanged = { viewModel.onScrollBoundsChanged(it) },
                         onSelectSheet = { viewModel.dispatch(ViewerIntent.SwitchSheet(it)) },
+                        onSelect = { viewModel.dispatch(ViewerIntent.SelectCell(it)) },
+                        onStopMotion = { viewModel.stopMotion() },
                         recents = recents.value,
                         onOpenRecent = { id ->
                             viewModel.dispatch(ViewerIntent.OpenFile(sourceFor(Uri.parse(id))))

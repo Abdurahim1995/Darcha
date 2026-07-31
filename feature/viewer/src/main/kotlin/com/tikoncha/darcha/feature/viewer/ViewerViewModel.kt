@@ -154,6 +154,27 @@ public class ViewerViewModel(
         }
     }
 
+    /**
+     * Stop any running glide or zoom animation. Returns `true` if something was
+     * actually stopped (T29).
+     *
+     * **Why the answer matters, not just the action.** A finger going down during
+     * a fling means *stop*, not *select* — that is what every scrollable surface
+     * on the platform does, and it is the case that feels broken when it is
+     * missing: you stab at a moving sheet to halt it and something lights up
+     * under your finger instead. The caller presses first, reads this, and only
+     * treats the lift as a selection when nothing was in motion.
+     *
+     * A running double-tap zoom counts for the same reason: the touch was aimed
+     * at the animation, not at a cell.
+     */
+    public fun stopMotion(): Boolean {
+        val stopped = flingJob?.isActive == true || zoomJob?.isActive == true
+        flingJob?.cancel()
+        zoomJob?.cancel()
+        return stopped
+    }
+
     /** Re-check which recents can still be opened — call when the list appears. */
     public fun refreshRecents() {
         availabilityTick.value++

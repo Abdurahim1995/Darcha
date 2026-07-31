@@ -1,5 +1,6 @@
 package com.tikoncha.darcha.feature.viewer.geometry
 
+import com.tikoncha.darcha.feature.viewer.mvi.CellRef
 import com.tikoncha.darcha.feature.viewer.mvi.ScrollBounds
 import com.tikoncha.darcha.feature.viewer.mvi.Viewport
 import com.tikoncha.darcha.model.FrozenPanes
@@ -56,6 +57,40 @@ internal data class PaneRegion(
     /** Cells the renderer visits for this region. */
     val cellCount: Int
         get() = (lastRow - firstRow + 1) * (lastColumn - firstColumn + 1)
+
+    /**
+     * Whether the screen point ([x], [y]) falls in this region.
+     *
+     * Half-open on the right and bottom, matching how [PaneRegions.regions]
+     * builds them, so the four regions tile the grid area exactly: a point on a
+     * seam belongs to precisely one of them and a tap can never be ambiguous.
+     */
+    fun contains(x: Float, y: Float): Boolean =
+        x >= left && x < right && y >= top && y < bottom
+}
+
+/**
+ * The cell under the screen point ([x], [y]), or `null` if the point misses the
+ * grid (T29).
+ *
+ * **This is where frozen panes bite.** Each region has its own origin and its own
+ * viewport with the frozen axes zeroed, so a tap in the frozen corner and the
+ * same pixel offset in the body are different cells. Translating into the
+ * region's own space first is what makes the four cases one case: after
+ * subtracting the origin, [GridGeometry.cellAt] is the ordinary unfrozen
+ * calculation, which is the same property the drawing code relies on.
+ *
+ * Iterated in reverse — frozen regions first — to mirror draw order, so the
+ * answer matches what is visibly on top even if the rectangles ever stop tiling
+ * perfectly.
+ */
+internal fun List<PaneRegion>.cellAt(x: Float, y: Float, geometry: GridGeometry): CellRef? {
+    for (i in indices.reversed()) {
+        val region = this[i]
+        if (!region.contains(x, y)) continue
+        return geometry.cellAt(x - region.originX, y - region.originY, region.viewport)
+    }
+    return null
 }
 
 /**

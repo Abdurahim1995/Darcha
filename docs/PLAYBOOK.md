@@ -73,7 +73,7 @@ Prerequisites in repo: `CLAUDE.md` (root), `docs/TECH_SPEC.md`, this file.
 > **M4 exit criteria — met. v1.0.0 shipped.** 🎉
 
 **M5 — v1.1**
-- [x] T27 .ods → Unsupported · [x] T28 Theme colour vs black · [ ] T29 Selection + copy · [ ] 🧑 OWNER: producer fixtures · [ ] T30 Corpus lock
+- [x] T27 .ods → Unsupported · [x] T28 Theme colour vs black · [x] T29 Selection + copy · [ ] 🧑 OWNER: producer fixtures · [ ] T30 Corpus lock
 
 > **T27 — DONE.** A renamed `.ods` now says "not supported" instead of "damaged". Detection stayed inside the header-read budget: OpenDocument v1.2 §3.3 pins the `mimetype` entry first, stored and extra-field-free, which puts the media type at byte **38** — so `HEADER_LEN` grew from 8 to 128 and nothing else changed. No `ZipFile`, no central directory, no inflation. The check is strict on all three rules and returns "not ODF" on any deviation, so it can miss but never misfire; six tests pin exactly that.
 >
@@ -88,6 +88,16 @@ Prerequisites in repo: `CLAUDE.md` (root), `docs/TECH_SPEC.md`, this file.
 > **Decision recorded in TECH_SPEC §7 as the task required: `theme1.xml` is not read**, and the reason is that reading it would not change this outcome — `lt1`/`dk1` are `sysClr` references, so resolving them yields exactly the "let the renderer decide" the model now represents. What it *would* fix is themes 2–11, which are flattened to black today; that is a fidelity gap needing the index swap and `tint` handling, and it has its own pinned test so changing it stays deliberate.
 >
 > Verified on device in **both themes**, six cases each (One UI ignores `cmd uimode night`; the switch went through Display settings). The grey row is the one that matters: it stays dim in both, proving the rule is bounded. `styles-basic` re-checked as a regression guard. Tests 332 → 350.
+>
+> **T29 — DONE.** `TapCell` is wired, and it changed shape on the way: the intent now carries a resolved `CellRef` rather than the tap's pixel, because screen coordinates mean nothing without the geometry that produced them — and that geometry lives in the renderer, not in a reducer that must stay a pure function. Same split as `Fling → Scroll`; recorded in TECH_SPEC §9 and §10.
+>
+> **Hit-testing was the difficulty, as expected.** Each of the four regions has its own origin and a viewport with its frozen axes zeroed, so after translating into region space the calculation is the ordinary unfrozen one. Verified on `excel/frozen-both.xlsx` by tapping all four and reading the address off the selection bar: corner→`A1`, frozen rows→`B1`, frozen columns→`A3`, body→`C3`. Three unit tests pin it, and deliberately breaking the origin lookup fails exactly those three.
+>
+> **Decisions made and written down.** A touch during a fling stops the glide and selects nothing — standard behaviour, and the surprising one to get wrong; `stopMotion()` returns whether it stopped something so the tap can tell. The **displayed** string is what gets copied, not the raw value: a date cell holds `45306` and nobody who taps a cell reading `01-15-24` means to copy the serial. Verified by pasting into another app. The honest cost — `General` shows 11 significant digits, so a rounded display copies rounded — is in the KDoc. No toast on API 33+, where the system shows its own; the toast below that was verified on this Android 10 device.
+>
+> A selection bar carries the copy button and the full value, which also solves a real viewer problem: a cell narrower than its contents is clipped in the grid, and this is the only place a long value can be read. `ContentCopy` lives in `material-icons-extended`, so it is a labelled button instead — no new dependency, and more discoverable anyway.
+>
+> Selection survives rotation (verified in landscape) and resets on sheet switch. Frame cost is not measurable: two back-to-back runs over `big-50k`, 24/32/36/65 ms without a selection against 23/31/36/61 ms with one. Tests 350 → 360.
 
 ---
 

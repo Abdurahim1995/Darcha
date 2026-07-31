@@ -24,6 +24,7 @@ manifest.
 - Number and date formatting, including Excel's 1900 leap-year bug
 - Merged cells and frozen panes
 - Pinch zoom, fling scrolling, recent files
+- Tap a cell to select it and copy its value
 - English and Uzbek; light and dark
 
 ## What it deliberately does not do
@@ -73,7 +74,7 @@ Every number below comes from a **Samsung Galaxy A31** — a mid-range phone fro
 | Scroll frame time, 90th percentile | 18 ms / 23–30 ms |
 | Cells drawn per frame, whatever the sheet size | **259** |
 | APK, signed, R8 + resource shrinking | **1.10 MB** |
-| Tests | **350** |
+| Tests | **360** |
 
 **On frame times.** The 60 fps budget is 16.7 ms. The *median* frame fits inside
 it and the 90th percentile does not, so this page is not going to claim "60 fps"
@@ -190,7 +191,7 @@ black on the author's yellow is a pairing, not an accident.
 
 ## Testing
 
-**350 tests** — 38 in `:core:model`, 102 in `:core:parser`, 210 in
+**360 tests** — 38 in `:core:model`, 102 in `:core:parser`, 220 in
 `:feature:viewer`. The 140 in `:core:*` are pure JVM and need no emulator.
 
 The parser is fixture-driven and the rule is absolute: **no fixture, no
@@ -235,7 +236,7 @@ setup and the release checklist.
 Post-v1 candidates, from [TECH_SPEC §14](docs/TECH_SPEC.md):
 
 - DOCX viewer via HTML → WebView — a deliberate second rendering strategy
-- Text selection, copy, and in-sheet search
+- In-sheet search, and text selection *within* a cell
 - Basic charts and embedded images
 - F-Droid publication
 

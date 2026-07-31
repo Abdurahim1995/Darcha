@@ -68,4 +68,7 @@
     <!-- Content descriptions -->
     <string name="cd_error_icon">Error</string>
 
+    <!-- Cell selection (T29) -->
+    <string name="action_copy">Copy</string>
+    <string name="copied_to_clipboard">Copied</string>
 </resources>

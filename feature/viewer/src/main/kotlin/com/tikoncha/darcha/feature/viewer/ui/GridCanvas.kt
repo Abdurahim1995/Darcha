@@ -35,7 +35,9 @@ import com.tikoncha.darcha.feature.viewer.geometry.MergeIndex
 import com.tikoncha.darcha.feature.viewer.geometry.Pane
 import com.tikoncha.darcha.feature.viewer.geometry.PaneRegion
 import com.tikoncha.darcha.feature.viewer.geometry.PaneRegions
+import com.tikoncha.darcha.feature.viewer.geometry.cellAt
 import com.tikoncha.darcha.feature.viewer.data.SheetSnapshot
+import com.tikoncha.darcha.feature.viewer.mvi.CellRef
 import com.tikoncha.darcha.feature.viewer.mvi.ScrollBounds
 import com.tikoncha.darcha.feature.viewer.mvi.Viewport
 import com.tikoncha.darcha.model.CellStyle
@@ -73,6 +75,9 @@ public fun GridCanvas(
     onBoundsChanged: (ScrollBounds) -> Unit,
     modifier: Modifier = Modifier,
     onDrawnCells: (Int) -> Unit = {},
+    selection: () -> CellRef? = { null },
+    onSelect: (CellRef?) -> Unit = {},
+    onStopMotion: () -> Boolean = { false },
 ) {
     val density = LocalDensity.current.density
     val layout = sheet.layout
@@ -209,8 +214,31 @@ public fun GridCanvas(
         }
     }
 
-    val taps = Modifier.pointerInput(geometry, panes) {
+    val taps = Modifier.pointerInput(geometry, panes, merges) {
+        // Whether the finger that is currently down arrived to halt a glide. Held
+        // across the press → tap pair, which is why it lives outside the lambdas.
+        var haltedMotion = false
         detectTapGestures(
+            onPress = {
+                // A touch during a fling means stop, not select — see
+                // ViewerViewModel.stopMotion.
+                haltedMotion = onStopMotion()
+            },
+            onTap = { offset ->
+                if (haltedMotion) return@detectTapGestures
+                val current = viewport()
+                val regions = panes.regions(
+                    viewport = current,
+                    originX = rowHeaderWidth,
+                    originY = columnHeaderHeight,
+                    width = size.width.toFloat(),
+                    height = size.height.toFloat(),
+                )
+                // A tap on the header strips or past the last row falls outside
+                // every region and clears the selection rather than guessing.
+                val hit = regions.cellAt(offset.x, offset.y, geometry)
+                onSelect(hit?.let { merges.anchorOf(it.row, it.col) })
+            },
             onDoubleTap = { offset ->
                 val current = viewport()
                 onResetZoom(
@@ -233,6 +261,8 @@ public fun GridCanvas(
             height = size.height,
         )
 
+        val selected = selection()
+
         for (region in regions) {
             if (!region.isVisible) continue
             drawRegion(
@@ -247,6 +277,9 @@ public fun GridCanvas(
                 textMeasurer = textMeasurer,
                 cache = textCache,
             )
+            if (selected != null) {
+                drawSelection(selected, region, geometry, merges, colors)
+            }
         }
 
         drawHeaders(
@@ -657,6 +690,58 @@ private const val CELL_PADDING = 4f
 private const val HEADER_ZOOM = 1f
 private const val GRID_STROKE = 1f
 private const val FREEZE_STROKE = 2f
+
+/**
+ * Outline the selected cell inside one region, if it falls there (T29).
+ *
+ * **Hot path.** This runs once per visible region per frame, so it does the cheap
+ * rejection first: four integer comparisons against the region's own row and
+ * column range, which is all it costs for the three regions the selection is not
+ * in. Only a region that actually holds it pays for the merge lookup — one
+ * binary search — and one stroked rect. `Offset` and `Size` are value classes, so
+ * nothing here allocates.
+ *
+ * A selection inside a merged range is drawn across the **whole** range, not one
+ * cell of it: the tap already resolved to the anchor, and outlining a third of a
+ * merged title would look like a bug.
+ */
+private fun DrawScope.drawSelection(
+    selected: CellRef,
+    region: PaneRegion,
+    geometry: GridGeometry,
+    merges: MergeIndex,
+    colors: GridColors,
+) {
+    // The merge may start outside the region even when part of it is visible, so
+    // resolve the span before deciding what is on screen.
+    val index = merges.indexOf(selected.row, selected.col)
+    val firstRow = if (index >= 0) merges.startRow(index) else selected.row
+    val lastRow = if (index >= 0) merges.endRow(index) else selected.row
+    val firstCol = if (index >= 0) merges.startCol(index) else selected.col
+    val lastCol = if (index >= 0) merges.endCol(index) else selected.col
+
+    if (lastRow < region.firstRow || firstRow > region.lastRow) return
+    if (lastCol < region.firstColumn || firstCol > region.lastColumn) return
+
+    val left = region.originX + geometry.screenXOf(firstCol, region.viewport)
+    val top = region.originY + geometry.screenYOf(firstRow, region.viewport)
+    val width = geometry.spanWidthOf(firstCol, lastCol, region.viewport)
+    val height = geometry.spanHeightOf(firstRow, lastRow, region.viewport)
+
+    // Clipped to the region, so a selection in the body cannot draw over a frozen
+    // strip that is painted on top of it.
+    clipRect(left = region.left, top = region.top, right = region.right, bottom = region.bottom) {
+        drawRect(
+            color = colors.selection,
+            topLeft = Offset(left, top),
+            size = Size(width, height),
+            style = Stroke(width = SELECTION_STROKE),
+        )
+    }
+}
+
+/** Selection outline width, in physical pixels — heavier than a gridline. */
+private const val SELECTION_STROKE = 4f
 
 /**
  * What colour a cell's text is drawn in.

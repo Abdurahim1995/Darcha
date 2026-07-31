@@ -21,6 +21,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
 import com.tikoncha.darcha.feature.viewer.R
 import com.tikoncha.darcha.feature.viewer.data.RecentDocument
+import com.tikoncha.darcha.feature.viewer.mvi.CellRef
 import com.tikoncha.darcha.feature.viewer.mvi.ScrollBounds
 import com.tikoncha.darcha.feature.viewer.mvi.ViewerState
 import com.tikoncha.darcha.feature.viewer.mvi.Viewport
@@ -53,6 +54,8 @@ public fun ViewerScreen(
     onResetZoom: (focalX: Float, focalY: Float) -> Unit = { _, _ -> },
     onBoundsChanged: (ScrollBounds) -> Unit = {},
     onSelectSheet: (Int) -> Unit = {},
+    onSelect: (CellRef?) -> Unit = {},
+    onStopMotion: () -> Boolean = { false },
     recents: List<RecentDocument> = emptyList(),
     onOpenRecent: (String) -> Unit = {},
     onForgetRecent: (String) -> Unit = {},
@@ -68,6 +71,11 @@ public fun ViewerScreen(
     }
     val loadProgress by remember(state) {
         derivedStateOf { (state.value as? ViewerState.Ready)?.loadProgress }
+    }
+    // Its own slice, so moving the selection does not recompose anything that
+    // reads the viewport, and vice versa.
+    val selection by remember(state) {
+        derivedStateOf { (state.value as? ViewerState.Ready)?.selection }
     }
 
     val readySheet = sheet
@@ -89,6 +97,9 @@ public fun ViewerScreen(
             onResetZoom = onResetZoom,
             onBoundsChanged = onBoundsChanged,
             onSelectSheet = onSelectSheet,
+            selection = selection,
+            onSelect = onSelect,
+            onStopMotion = onStopMotion,
             modifier = modifier,
         )
         return

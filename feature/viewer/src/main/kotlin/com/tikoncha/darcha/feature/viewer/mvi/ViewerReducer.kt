@@ -67,9 +67,10 @@ public object ViewerReducer {
             // nothing new and the state stays a pure function of the events.
             is ViewerIntent.Fling -> state
 
-            // Deliberately inert: selection is post-v1 (TECH_SPEC §14). See
-            // ViewerIntent.TapCell.
-            is ViewerIntent.TapCell -> state
+            // The renderer has already hit-tested the tap and resolved any merge
+            // to its anchor (T29), so there is nothing to compute here — which is
+            // the point. See ViewerIntent.SelectCell.
+            is ViewerIntent.SelectCell -> state.mapReady { it.copy(selection = intent.cell) }
         }
 
     private fun reduceParse(state: ViewerState, event: ParseEvent): ViewerState =

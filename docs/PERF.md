@@ -103,6 +103,53 @@ in the system file picker**. Both the list and the search results ignore
 quirk on this A31, not an app behaviour — the same taps drive Darcha's own UI
 fine.
 
+### T29 — selection, verified in all four frozen regions
+
+The hit-test is the part that breaks, so it was checked where it breaks:
+`excel/frozen-both.xlsx` (1 frozen column, 2 frozen rows), tapping each region
+and reading the address off the selection bar rather than judging by eye.
+
+| Region | Tapped | Selected |
+|---|---|---|
+| Frozen corner | column A, row 1 | **A1 · Nomi** |
+| Frozen rows | column B, row 1 | **B1 · Soni** |
+| Frozen columns | column A, row 3 | **A3 · Anor** |
+| Body | column C, row 3 | **C3 · 8000** |
+
+Four regions, four different answers. A hit-test that ignored the region origins
+would have returned the body's cell for all of them.
+
+| Also checked on device | Result |
+|---|---|
+| Tap inside a merged range (`synthetic/merged`) | selects the **anchor** `A1`, and the outline spans the whole `A1:C1` range rather than one cell of it |
+| Copy, pasted back into another app's text field | clipboard held **`01-15-24`** — the displayed date, not the serial `45306` |
+| Copy confirmation on Android 10 | the app's own toast appears (there is no system confirmation below API 33, where the app stays silent instead) |
+| Tap during a fling | **stops the glide, selects nothing** |
+| Tap with nothing moving | selects — `B99 · 686` |
+| Tap on the row-header strip | clears the selection |
+| Rotation to landscape | selection survives, bar still shows `A1 · 01-15-24` |
+| Sheet switch (`multisheet`) | selection resets, bar disappears |
+| FATAL exceptions | **0** |
+
+**Frame cost: none measurable.** Twelve injected flings over `big-50k-rows.xlsx`,
+the two runs back to back so thermal drift cannot separate them:
+
+| | 50th | 90th | 95th | 99th |
+|---|---|---|---|---|
+| No selection | 24 ms | 32 ms | 36 ms | 65 ms |
+| Selection active | 23 ms | 31 ms | 36 ms | 61 ms |
+
+The selected run measures marginally *faster*, which is noise rather than an
+improvement — the honest reading is that one stroked rect per frame is below what
+this method can resolve. It is bounded by construction anyway: four integer
+comparisons reject the three regions the selection is not in, and only the
+remaining one pays for a binary search and a `drawRect`. Nothing allocates —
+`Offset` and `Size` are value classes.
+
+*(These medians sit above the 15–18 ms recorded earlier for the debug build. The
+device had been running for hours by this point, and PERF.md's own caveat applies:
+only runs close together in time are comparable. The A/B pair above is.)*
+
 ### T28 — text colour, verified in both themes and both directions
 
 The T24 near-black heuristic is deleted, not demoted: `grep` for

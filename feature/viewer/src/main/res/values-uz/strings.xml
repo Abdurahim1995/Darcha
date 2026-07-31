@@ -65,4 +65,7 @@
     <!-- Ekran o\'quvchi uchun -->
     <string name="cd_error_icon">Xato</string>
 
+    <!-- Katak tanlash (T29) -->
+    <string name="action_copy">Nusxalash</string>
+    <string name="copied_to_clipboard">Nusxalandi</string>
 </resources>

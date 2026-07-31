@@ -57,14 +57,25 @@ public sealed interface ViewerIntent : ViewerEvent {
     ) : ViewerIntent
 
     /**
-     * A tap at viewport pixel ([x], [y]), to be hit-tested to a cell.
+     * Select [cell], or clear the selection when it is `null` (T29).
      *
-     * **Not wired.** Cell selection is post-v1 (TECH_SPEC §14). The pieces exist
-     * — `MergeIndex.anchorOf` maps a covered cell to its merge anchor (T18), and
-     * [ViewerState.Ready] already carries a `selection` — but nothing dispatches
-     * this and the reducer ignores it. That is a decision, not an oversight.
+     * **Why this carries a cell and not the tap's pixel.** Screen coordinates
+     * mean nothing without the geometry that produced them — column widths, the
+     * zoom, and which of the four frozen regions the point landed in, each with
+     * its own origin. All of that lives in the renderer, so the renderer resolves
+     * the tap and this intent carries the answer. The alternative would be a
+     * reducer that reads geometry, and the reducer is a pure function with no
+     * layout, no I/O and no Android in it (TECH_SPEC §10).
+     *
+     * The same split already exists for [Fling], which the ViewModel turns into
+     * [Scroll]s. Resolution happens wherever the knowledge is; the reducer only
+     * ever stores facts.
+     *
+     * Merged cells resolve to their **anchor** before reaching here, so the
+     * selection is the cell that owns the value rather than one of the covered
+     * cells that has none (`MergeIndex.anchorOf`, T18).
      */
-    public data class TapCell(public val x: Float, public val y: Float) : ViewerIntent
+    public data class SelectCell(public val cell: CellRef?) : ViewerIntent
 
     /** Retry the last failed load. */
     public data object Retry : ViewerIntent

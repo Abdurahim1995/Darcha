@@ -1,5 +1,6 @@
 package com.tikoncha.darcha.feature.viewer.geometry
 
+import com.tikoncha.darcha.feature.viewer.mvi.CellRef
 import com.tikoncha.darcha.feature.viewer.mvi.Viewport
 import com.tikoncha.darcha.model.FrozenPanes
 import com.tikoncha.darcha.model.SheetLayout
@@ -310,6 +311,145 @@ class PaneRegionsTest {
 
         assertEquals(g.columnOffset(1), p.minScrollX, EPSILON)
         assertEquals(g.rowOffset(2), p.minScrollY, EPSILON)
+    }
+
+    // --- hit-testing across the four regions (T29) ---
+    //
+    // This is where frozen panes bite. Each region has a different origin and a
+    // viewport with its frozen axes zeroed, so the same pixel offset means a
+    // different cell depending on which region it lands in. A hit-test that
+    // forgets that silently selects the wrong cell — the failure looks like a
+    // rendering bug and is not one.
+
+    /**
+     * The set-up the device check uses: one frozen column, two frozen rows, and
+     * the body scrolled well past both, so every region shows different cells.
+     */
+    private fun frozenAndScrolled(): Pair<PaneRegions, List<PaneRegion>> {
+        val g = geometry(
+            columnWidths = (0..9).associateWith { 10.0 },
+            rowHeights = (0..29).associateWith { 20.0 },
+        )
+        val p = panes(frozenCols = 1, frozenRows = 2, geometry = g)
+        // Scrolled to column 4 / row 8: the body starts there while the frozen
+        // strips still show columns 0 and rows 0-1.
+        val viewport = Viewport(
+            scrollX = g.columnOffset(4),
+            scrollY = g.rowOffset(8),
+            zoom = 1f,
+        )
+        return p to regionsOf(p, viewport)
+    }
+
+    @Test
+    fun aTapInEachRegion_resolvesToThatRegionsCell() {
+        val (_, regions) = frozenAndScrolled()
+        val g = geometry(
+            columnWidths = (0..9).associateWith { 10.0 },
+            rowHeights = (0..29).associateWith { 20.0 },
+        )
+
+        // One pixel inside each region's top-left corner. The four answers are
+        // all different, and that difference is the whole point: the corner shows
+        // the sheet's origin while the body shows where it has scrolled to.
+        val corner = regions.pane(Pane.CORNER)!!
+        assertEquals(
+            "frozen corner shows A1",
+            CellRef(row = 0, col = 0),
+            regions.cellAt(corner.left + 1f, corner.top + 1f, g),
+        )
+
+        val top = regions.pane(Pane.TOP)!!
+        assertEquals(
+            "frozen rows, scrolled columns",
+            CellRef(row = 0, col = 4),
+            regions.cellAt(top.left + 1f, top.top + 1f, g),
+        )
+
+        val left = regions.pane(Pane.LEFT)!!
+        assertEquals(
+            "frozen columns, scrolled rows",
+            CellRef(row = 8, col = 0),
+            regions.cellAt(left.left + 1f, left.top + 1f, g),
+        )
+
+        val body = regions.pane(Pane.BODY)!!
+        assertEquals(
+            "scrolled on both axes",
+            CellRef(row = 8, col = 4),
+            regions.cellAt(body.left + 1f, body.top + 1f, g),
+        )
+    }
+
+    /**
+     * The same screen pixel, read through the region it is actually in.
+     *
+     * If hit-testing ignored the regions and used the body's viewport
+     * everywhere, the corner would answer with the body's cell. This asserts
+     * they differ, so that mistake cannot pass.
+     */
+    @Test
+    fun theSamePixelOffsetMeansDifferentCellsInDifferentRegions() {
+        val (_, regions) = frozenAndScrolled()
+        val g = geometry(
+            columnWidths = (0..9).associateWith { 10.0 },
+            rowHeights = (0..29).associateWith { 20.0 },
+        )
+        val corner = regions.cellAt(originX + 1f, originY + 1f, g)
+        val body = regions.pane(Pane.BODY)!!
+        val bodyCell = regions.cellAt(body.left + 1f, body.top + 1f, g)
+
+        assertNotNull(corner)
+        assertNotNull(bodyCell)
+        assertTrue("frozen corner must not resolve like the body", corner != bodyCell)
+    }
+
+    @Test
+    fun everyRegionIsReachable_soNoTapFallsBetweenThem() {
+        val (_, regions) = frozenAndScrolled()
+        val g = geometry(
+            columnWidths = (0..9).associateWith { 10.0 },
+            rowHeights = (0..29).associateWith { 20.0 },
+        )
+        // The regions tile the grid area, so sweeping it must never miss. A gap
+        // would be a dead strip the user can tap with nothing happening.
+        var x = originX
+        while (x < width) {
+            var y = originY
+            while (y < height) {
+                assertNotNull("no region owns ($x, $y)", regions.firstOrNull { it.contains(x, y) })
+                y += 137f
+            }
+            x += 91f
+        }
+    }
+
+    @Test
+    fun aTapOnTheHeaderStrips_hitsNoRegion() {
+        val (_, regions) = frozenAndScrolled()
+        val g = geometry(columnWidths = (0..9).associateWith { 10.0 })
+        // Above and left of the grid area is chrome, not cells.
+        assertNull(regions.cellAt(originX - 1f, originY + 10f, g))
+        assertNull(regions.cellAt(originX + 10f, originY - 1f, g))
+    }
+
+    @Test
+    fun hitTestingHoldsAtEveryZoom() {
+        val g = geometry(
+            columnWidths = (0..9).associateWith { 10.0 },
+            rowHeights = (0..29).associateWith { 20.0 },
+        )
+        val p = panes(frozenCols = 1, frozenRows = 2, geometry = g)
+        for (zoom in ZOOMS) {
+            val viewport = Viewport(p.minScrollX, p.minScrollY, zoom)
+            val regions = regionsOf(p, viewport)
+            val corner = regions.pane(Pane.CORNER)!!
+            assertEquals(
+                "at zoom $zoom the frozen corner still starts at A1",
+                CellRef(row = 0, col = 0),
+                regions.cellAt(corner.left + 1f, corner.top + 1f, g),
+            )
+        }
     }
 
     private companion object {
