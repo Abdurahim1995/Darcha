@@ -118,7 +118,19 @@ Prerequisites in repo: `CLAUDE.md` (root), `docs/TECH_SPEC.md`, this file.
 > The `check_fixtures.py` divergences are now **accepted rather than left red**, each with its reason printed on every run: a checker that stays red trains people to skim past it, and then the next real divergence goes unnoticed. `docs/FIXTURE_RECIPES.md` was corrected to match what the files actually contain — including an instruction to type the comma decimals deliberately, since that cell turned out to be the most useful one in the corpus.
 
 **M6 — v1.2**
-- [ ] T31 Scroll to cell · [ ] T32 Search engine · [ ] T33 Search UI · [ ] T34 Range selection + copy
+- [x] T31 Scroll to cell · [ ] T32 Search engine · [ ] T33 Search UI · [ ] T34 Range selection + copy
+
+> **T31 — DONE.** `PaneRegions.scrollToShow` plus a 1-D solver, `solveAxisScroll`. Pure geometry, no Compose, and **not wired to anything** — T33 owns that.
+>
+> **The frozen-band trap is closed by construction, not by a guard.** Everything is solved inside the *body's own content window* `[scroll, scroll + extent]`, where "visible" means `start >= scroll + margin`. Since `scroll` is the unknown, the target always lands at or past where the body begins drawing; there is no code path that could put it under a frozen strip, so there is no check for one. The frozen strips enter in exactly one place — they shorten `extent` — the same "one number per axis" property that made T19's seams reliable.
+>
+> The clamp is where the two forces meet, and it resolves provably rather than by luck: the floor is `minScroll`, the content coordinate where the body starts, and a non-frozen target is by definition at or past it. So clamping can cost the target its **margin** but never its **visibility**. Asserted directly on the first unfrozen cell.
+>
+> **Margin: half a default cell per axis.** One number per axis from the document's own metrics, so scrolling to any two cells leaves the same visual gap, capped at a quarter of the window so it can never make a target unplaceable. A cell flush against the frozen band is technically visible and practically unreadable.
+>
+> **The tests check the implementation against the renderer, not against my own arithmetic.** `assertLandsInBody` asks the real `regions()` where the cell would be drawn and then asks T29's `cellAt` what is at that point — if the cell ends up under a frozen strip the hit-test answers with the *frozen* cell and the test fails. Covered: already-visible (asserted as the same instance, so it cannot silently recompute), behind the row band, the column band, the corner, both far edges where clamping and the frozen offset fight, five pane configurations × six zooms × seven targets, frozen targets on one and both axes, merged ranges that fit and that cannot. Three deliberate breaks — dropping the too-big-to-fit rule, forgetting the frozen strip in the extent, dropping the `min` clamp — each failed exactly the tests that should catch it.
+>
+> Additive along the way: `GridGeometry.defaultColumnWidth` / `defaultRowHeight`, `PaneRegions.isColumnFrozen` / `isRowFrozen`, and `MIN_EFFECTIVE_ZOOM` made public so the zoom floor has one definition instead of two. Tests 388 → 407.
 
 ---
 

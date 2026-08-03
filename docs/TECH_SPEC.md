@@ -155,6 +155,39 @@ Every boundary is derived from **one number per axis**: the frozen extent, `span
 Scrolling gains a **floor**: the scrolling region starts at the first unfrozen column, and letting scroll fall below that would draw the frozen columns a second time inside the body. The floor is clamped in two places on purpose — in the reducer via `ScrollBounds`, and again inside the region maths, because the renderer publishes the bounds *after* the first composition and the first frame would otherwise be drawn unclamped.
 - **Merged cells:** drawn once at the anchor cell spanning the merged bounds; covered cells are skipped.
 
+### Scrolling a cell into view (T31)
+
+Bringing a target cell on screen is the prerequisite for search, and it has one
+real difficulty: **frozen rows and columns are drawn over the body**, so a scroll
+computed against the whole canvas can park a cell underneath one — on screen by
+the arithmetic, invisible to the reader, and with nothing anywhere to report it.
+
+The answer is structural rather than defensive. Everything is solved inside the
+**body's own content window**, `[scroll, scroll + extent]`, where *visible* means
+`start >= scroll + margin`. Because `scroll` is the unknown being solved for, the
+target's content coordinate always ends up at or past where the body begins
+drawing. There is no guard against the frozen band because no code path can
+produce the failure. The frozen strips enter the calculation in exactly one
+place — they shorten `extent` — which is the same "one number per axis" property
+that keeps §9's pane seams closed.
+
+Three rules resolve in order: a target already comfortably visible does not move
+the viewport at all; a range too large to frame shows its **start**, which for a
+merge is the anchor that carries the value; otherwise the smallest movement that
+satisfies the margin.
+
+**Margin is half a default cell per axis** — one number per axis taken from the
+document's own metrics, so scrolling to any two cells leaves the same visual gap,
+capped at a quarter of the window so it can never make a target unplaceable. A
+cell flush against the frozen band is technically visible and practically
+unreadable.
+
+**Where clamping and the frozen offset meet**, the outcome is provable rather
+than lucky. The scroll floor is `minScroll`, the content coordinate at which the
+body starts, and a non-frozen target is by definition at or past it — so the
+clamp can cost the target its margin but never its visibility. A cell *inside*
+the frozen band is on screen by construction and its axis is left alone.
+
 ### Cell selection, and where a tap is resolved (T29)
 
 A tap selects a cell; the selection is drawn as an outline and its value can be

@@ -109,7 +109,7 @@ internal fun List<PaneRegion>.cellAt(x: Float, y: Float, geometry: GridGeometry)
  * tile the area exactly — no gap, no overlap.
  */
 internal class PaneRegions(
-    private val geometry: GridGeometry,
+    internal val geometry: GridGeometry,
     private val panes: FrozenPanes,
 ) {
 
@@ -121,6 +121,17 @@ internal class PaneRegions(
 
     /** Whether anything is frozen at all — the common case is `false`. */
     val isFrozen: Boolean get() = frozenCols > 0 || frozenRows > 0
+
+    /**
+     * Whether [column] is in the frozen band, and therefore on screen already.
+     *
+     * Scrolling cannot move it and does not need to: that is what freezing
+     * means. [scrollToShow] leans on this rather than discovering it.
+     */
+    fun isColumnFrozen(column: Int): Boolean = column < frozenCols
+
+    /** Whether [row] is in the frozen band — see [isColumnFrozen]. */
+    fun isRowFrozen(row: Int): Boolean = row < frozenRows
 
     /**
      * Content x the scrolling region starts at: the left edge of the first

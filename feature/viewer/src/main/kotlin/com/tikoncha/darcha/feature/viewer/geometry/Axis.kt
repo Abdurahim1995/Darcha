@@ -20,7 +20,8 @@ package com.tikoncha.darcha.feature.viewer.geometry
  * @param count number of entries on this axis.
  */
 internal class Axis(
-    private val defaultSize: Float,
+    /** Size of an entry with no custom size — the sheet's own default. */
+    val defaultSize: Float,
     customSizes: Map<Int, Float>,
     val count: Int,
 ) {

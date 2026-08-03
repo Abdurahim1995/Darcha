@@ -82,6 +82,19 @@ public class GridGeometry(
     /** Full grid height in content pixels. */
     public val contentHeight: Float get() = rows.totalSize
 
+    /**
+     * Width of a column with no custom width, in content pixels.
+     *
+     * Exposed for [PaneRegions.scrollToShow], which sizes its margin as a
+     * fraction of a default cell rather than of the screen: one number per axis,
+     * derived from the document's own metrics, so scrolling to any two cells
+     * leaves the same visual gap.
+     */
+    public val defaultColumnWidth: Float get() = columns.defaultSize
+
+    /** Height of a row with no custom height, in content pixels. */
+    public val defaultRowHeight: Float get() = rows.defaultSize
+
     /** Left edge of [column] in content pixels. */
     public fun columnOffset(column: Int): Float = columns.offsetOf(column)
 
@@ -171,6 +184,10 @@ public class GridGeometry(
         public const val POINTS_TO_PIXELS_96DPI: Float = 96f / 72f
 
         /** Floor for zoom, so a zero or negative value can never divide. */
-        private const val MIN_EFFECTIVE_ZOOM = 0.01f
+        /**
+         * Zoom floor. Dividing a screen extent by a zoom of zero yields an
+         * infinite content window, so every conversion clamps to this first.
+         */
+        public const val MIN_EFFECTIVE_ZOOM: Float = 0.01f
     }
 }
