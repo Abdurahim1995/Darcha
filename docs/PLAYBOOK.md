@@ -118,7 +118,7 @@ Prerequisites in repo: `CLAUDE.md` (root), `docs/TECH_SPEC.md`, this file.
 > The `check_fixtures.py` divergences are now **accepted rather than left red**, each with its reason printed on every run: a checker that stays red trains people to skim past it, and then the next real divergence goes unnoticed. `docs/FIXTURE_RECIPES.md` was corrected to match what the files actually contain — including an instruction to type the comma decimals deliberately, since that cell turned out to be the most useful one in the corpus.
 
 **M6 — v1.2**
-- [x] T31 Scroll to cell · [ ] T32 Search engine · [ ] T33 Search UI · [ ] T34 Range selection + copy
+- [x] T31 Scroll to cell · [x] T32 Search engine · [ ] T33 Search UI · [ ] T34 Range selection + copy
 
 > **T31 — DONE.** `PaneRegions.scrollToShow` plus a 1-D solver, `solveAxisScroll`. Pure geometry, no Compose, and **not wired to anything** — T33 owns that.
 >
@@ -131,6 +131,18 @@ Prerequisites in repo: `CLAUDE.md` (root), `docs/TECH_SPEC.md`, this file.
 > **The tests check the implementation against the renderer, not against my own arithmetic.** `assertLandsInBody` asks the real `regions()` where the cell would be drawn and then asks T29's `cellAt` what is at that point — if the cell ends up under a frozen strip the hit-test answers with the *frozen* cell and the test fails. Covered: already-visible (asserted as the same instance, so it cannot silently recompute), behind the row band, the column band, the corner, both far edges where clamping and the frozen offset fight, five pane configurations × six zooms × seven targets, frozen targets on one and both axes, merged ranges that fit and that cannot. Three deliberate breaks — dropping the too-big-to-fit rule, forgetting the frozen strip in the extent, dropping the `min` clamp — each failed exactly the tests that should catch it.
 >
 > Additive along the way: `GridGeometry.defaultColumnWidth` / `defaultRowHeight`, `PaneRegions.isColumnFrozen` / `isRowFrozen`, and `MIN_EFFECTIVE_ZOOM` made public so the zoom floor has one definition instead of two. Tests 388 → 407.
+>
+> **T32 — DONE.** Engine only; T33 owns the UI. `SheetSearch.run` returns `SearchResults`, or `null` if it was cancelled — a superseded search has no partial answer worth showing, and returning one invites a caller to display it.
+>
+> **Matches both readings, one hit per cell — and the code made that cheap rather than expensive.** `ValueFormatter` renders text as itself, a boolean as `TRUE`/`FALSE` and an error as its code, so for every kind except `Number` the displayed and raw strings are *the same string*. The second comparison therefore only ever runs on numeric cells, which is exactly where the case lives: a date showing `01-15-24` over a stored `45306`. A cell matching both ways is reported once, as `MatchField.BOTH`.
+>
+> **Case-insensitive substring.** A viewer's user is looking for something half-remembered; whole-cell matching would make search nearly useless for text. `contains(ignoreCase = true)` compares by region without allocating.
+>
+> **The cache pressure, answered explicitly: the scan never touches the renderer's.** It builds its own `FormattedValueCache` and drops it, and text cells skip the formatter entirely — a shared string is a lookup, not a format, and letting it occupy entries would waste the capacity the numbers need. Measured on the real `big-50k` (350,007 cells): **25–30 ms per query, and the renderer's cache went 162 → 162 entries**, untouched. Asserted as a unit test as well as measured.
+>
+> **Progressive parsing: results are pinned to one immutable snapshot, and staleness is decided by identity.** A new chunk means a new `SheetData`, so `isFor()` says the results are *stale* rather than merely incomplete and the caller re-runs. That makes a match index pointing into a changed sheet impossible rather than unlikely. `complete` records whether the sheet had finished parsing, so a count is never presented as final when it is not.
+>
+> Matches are one `LongArray` — row, column and matched-field packed into each `Long`, so ascending order *is* row-major and the per-frame "is this cell a match?" lookup is an allocation-free binary search. The array is **sorted here** rather than assumed sorted: a class that promises row-major order should not depend on a caller keeping a promise on its behalf, and a test that builds a row with unsorted columns caught exactly that. Cross-sheet search deferred and stated. Tests 407 → 428.
 
 ---
 

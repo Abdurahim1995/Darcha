@@ -103,6 +103,32 @@ in the system file picker**. Both the list and the search results ignore
 quirk on this A31, not an app behaviour — the same taps drive Darcha's own UI
 fine.
 
+### Search over big-50k, and the cache it does not touch (T32)
+
+Measured on the JVM against the real `big-50k-rows.xlsx` — **350,007 cells across
+50,001 rows**. The engine is pure Kotlin, so this is its true cost; keeping the
+UI responsive around it is T33's job, not something this measurement can claim.
+
+| Query | Matches | Time |
+|---|---|---|
+| `zeta` | 8,333 | 28.4 ms |
+| `0.9` | 9,635 | 29.6 ms |
+| `epsilon` | 8,333 | 25.0 ms |
+| `qqqqq` | 0 | 27.3 ms |
+
+A miss costs the same as a hit, which is the expected shape: every populated cell
+is visited either way, and the work is dominated by formatting rather than by
+collecting results. Cancellation is polled every 1,024 cells — about 0.1 ms
+apart at this rate — so a superseded search stops almost immediately.
+
+**The renderer's cache: 162 entries before the search, 162 after.** That is the
+whole point of the design. `FormattedValueCache` holds 2,048 strings and is sized
+for a viewport; a scan of 350,007 cells through it would evict every string the
+grid needs and leave it re-measuring text on the next frame — search would make
+scrolling stutter. The scan builds its own cache and drops it, and text cells
+skip the formatter entirely because a shared string is a lookup rather than a
+format. Asserted as a unit test as well, not only measured here.
+
 ### v1.1.0 release verification — and the regression it caught
 
 Running the fixture set against the release build found a **real regression from
