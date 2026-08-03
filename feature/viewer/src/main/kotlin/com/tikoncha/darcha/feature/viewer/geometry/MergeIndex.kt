@@ -91,6 +91,42 @@ internal class MergeIndex private constructor(
         }
     }
 
+    /**
+     * The rectangle spanned by [from] and [to], **widened until it contains
+     * every merge it touches** (T34).
+     *
+     * This is the case the playbook said would break first, and it breaks for a
+     * structural reason: a rectangle that clips half a merged title is not
+     * something a spreadsheet can express. Half a merge has no value of its own
+     * and no outline that makes sense, so the honest answer is to include the
+     * whole thing.
+     *
+     * Widening is iterated to a fixed point rather than done once: growing the
+     * rectangle to swallow one merge can bring it into contact with another, and
+     * that one may reach further still. It terminates because the rectangle only
+     * ever grows and the sheet is finite; in practice one or two passes.
+     */
+    fun expandedRange(from: CellRef, to: CellRef): CellRange {
+        var startRow = minOf(from.row, to.row)
+        var endRow = maxOf(from.row, to.row)
+        var startCol = minOf(from.col, to.col)
+        var endCol = maxOf(from.col, to.col)
+
+        while (true) {
+            var grew = false
+            for (i in startRows.indices) {
+                // Rectangles overlap unless one is entirely past the other.
+                if (endRows[i] < startRow || startRows[i] > endRow) continue
+                if (endCols[i] < startCol || startCols[i] > endCol) continue
+                if (startRows[i] < startRow) { startRow = startRows[i]; grew = true }
+                if (endRows[i] > endRow) { endRow = endRows[i]; grew = true }
+                if (startCols[i] < startCol) { startCol = startCols[i]; grew = true }
+                if (endCols[i] > endCol) { endCol = endCols[i]; grew = true }
+            }
+            if (!grew) return CellRange(startRow, startCol, endRow, endCol)
+        }
+    }
+
     fun anchorOf(row: Int, col: Int): CellRef {
         val i = indexOf(row, col)
         return if (i == NONE) CellRef(row, col) else CellRef(startRows[i], startCols[i])

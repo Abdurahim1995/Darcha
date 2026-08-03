@@ -4,6 +4,7 @@ import android.util.Log
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -47,6 +48,7 @@ import com.tikoncha.darcha.feature.viewer.mvi.CellRef
 import com.tikoncha.darcha.feature.viewer.mvi.ScrollBounds
 import com.tikoncha.darcha.feature.viewer.mvi.Viewport
 import com.tikoncha.darcha.feature.viewer.search.SearchResults
+import com.tikoncha.darcha.model.CellRange
 import com.tikoncha.darcha.model.CellStyle
 import com.tikoncha.darcha.model.DEFAULT_MAX_DIGIT_WIDTH
 import com.tikoncha.darcha.model.FormattedValueCache
@@ -82,11 +84,12 @@ public fun GridCanvas(
     onBoundsChanged: (ScrollBounds) -> Unit,
     modifier: Modifier = Modifier,
     onDrawnCells: (Int) -> Unit = {},
-    selection: () -> CellRef? = { null },
+    selection: () -> CellRange? = { null },
     matches: () -> SearchResults? = { null },
     currentMatch: CellRef? = null,
     onReveal: (Viewport) -> Unit = {},
     onSelect: (CellRef?) -> Unit = {},
+    onSelectRange: (CellRange?) -> Unit = {},
     onStopMotion: () -> Boolean = { false },
 ) {
     val density = LocalDensity.current.density
@@ -190,6 +193,14 @@ public fun GridCanvas(
         if (next != viewport()) onReveal(next)
     }
 
+    // Raised while a long-press range drag owns the finger. Two things keep that
+    // gesture separated from the scroll loop and both are needed: the detector
+    // sits innermost in the modifier chain so it wins the main pass, and this
+    // flag covers the rest — consuming the change is not enough on its own,
+    // because the scroll loop can see a move in the same pass before the drag
+    // detector has decided to claim it.
+    var rangeDragging by remember { mutableStateOf(false) }
+
     // One gesture loop rather than stacked detectors, because a pinch and a drag
     // are the same stream of pointers and only the pointer *count* tells them
     // apart. detectDragGestures cannot see that count, so a second detector for
@@ -235,6 +246,8 @@ public fun GridCanvas(
                     // Once a gesture has become a pinch it stays one, so lifting
                     // to a single finger does not turn into a drag.
                     val change = pressed.first()
+                    // A range drag owns the finger; scrolling would fight it.
+                    if (rangeDragging || change.isConsumed) continue
                     val delta = change.position - change.previousPosition
                     if (delta != Offset.Zero) {
                         tracker.addPosition(change.uptimeMillis, change.position)
@@ -252,6 +265,46 @@ public fun GridCanvas(
                 onFling(-velocity.x / zoom, -velocity.y / zoom)
             }
         }
+    }
+
+    // Long-press to start a range, drag to extend it (T34).
+    //
+    // A one-finger drag already scrolls (T14), so range selection cannot use a
+    // plain drag without stealing it. Long-press-then-drag is the platform's own
+    // answer and costs the scroll gesture nothing: a long press requires the
+    // finger to stay still, which produces no scroll delta, and once it fires
+    // this detector consumes the movement so the scroll loop stops seeing it.
+    val rangeSelect = Modifier.pointerInput(geometry, panes, merges) {
+        var anchor: CellRef? = null
+
+        fun regionsNow() = panes.regions(
+            viewport = viewport(),
+            originX = rowHeaderWidth,
+            originY = columnHeaderHeight,
+            width = size.width.toFloat(),
+            height = size.height.toFloat(),
+        )
+
+        detectDragGesturesAfterLongPress(
+            onDragStart = { offset ->
+                anchor = regionsNow().cellAt(offset.x, offset.y, geometry)
+                rangeDragging = anchor != null
+                anchor?.let { onSelectRange(merges.rangeOf(it.row, it.col)) }
+            },
+            onDragEnd = { anchor = null; rangeDragging = false },
+            onDragCancel = { anchor = null; rangeDragging = false },
+            onDrag = { change, _ ->
+                change.consume()
+                val from = anchor ?: return@detectDragGesturesAfterLongPress
+                // Every position resolves through the same region-aware
+                // hit-test a tap uses (T29), so a drag that crosses into a
+                // frozen band lands on the cell the reader is pointing at
+                // rather than the one the body would have under that pixel.
+                val to = regionsNow().cellAt(change.position.x, change.position.y, geometry)
+                    ?: return@detectDragGesturesAfterLongPress
+                onSelectRange(merges.expandedRange(from, to))
+            },
+        )
     }
 
     val taps = Modifier.pointerInput(geometry, panes, merges) {
@@ -289,7 +342,12 @@ public fun GridCanvas(
         )
     }
 
-    Canvas(modifier = modifier.onSizeChanged { canvasSize = it }.then(taps).then(gestures)) {
+    Canvas(
+        // rangeSelect last, so it is the innermost node and sees the main pass
+        // before the scroll loop does.
+        modifier = modifier.onSizeChanged { canvasSize = it }
+            .then(taps).then(gestures).then(rangeSelect),
+    ) {
         // Read inside the draw block: a viewport change then invalidates only the
         // draw phase, never recomposing the surrounding chrome.
         val current = viewport()
@@ -814,21 +872,30 @@ private const val CURRENT_MATCH_STROKE = 5f
  * A selection inside a merged range is drawn across the **whole** range, not one
  * cell of it: the tap already resolved to the anchor, and outlining a third of a
  * merged title would look like a bug.
+ *
+ * A **range** keeps its anchor cell visible by giving it its own outline inside
+ * the outer one (T34) — the cell the bar names first in `A1:C4`, and the one a
+ * further tap would collapse to. Deliberately an outline rather than a wash over
+ * the rest: a translucent fill on top of cell text is the T28 legibility problem
+ * again, and the document is allowed to have put anything underneath.
  */
 private fun DrawScope.drawSelection(
-    selected: CellRef,
+    selected: CellRange,
     region: PaneRegion,
     geometry: GridGeometry,
     merges: MergeIndex,
     colors: GridColors,
 ) {
-    // The merge may start outside the region even when part of it is visible, so
-    // resolve the span before deciding what is on screen.
-    val index = merges.indexOf(selected.row, selected.col)
-    val firstRow = if (index >= 0) merges.startRow(index) else selected.row
-    val lastRow = if (index >= 0) merges.endRow(index) else selected.row
-    val firstCol = if (index >= 0) merges.startCol(index) else selected.col
-    val lastCol = if (index >= 0) merges.endCol(index) else selected.col
+    // A range arrives already widened to whole merges (T34), and a 1x1 tap
+    // selection is widened here so a merged cell still outlines as one block.
+    val span = merges.expandedRange(
+        CellRef(selected.startRow, selected.startCol),
+        CellRef(selected.endRow, selected.endCol),
+    )
+    val firstRow = span.startRow
+    val lastRow = span.endRow
+    val firstCol = span.startCol
+    val lastCol = span.endCol
 
     if (lastRow < region.firstRow || firstRow > region.lastRow) return
     if (lastCol < region.firstColumn || firstCol > region.lastColumn) return
@@ -847,11 +914,31 @@ private fun DrawScope.drawSelection(
             size = Size(width, height),
             style = Stroke(width = SELECTION_STROKE),
         )
+        if (span.isSingleCell) return@clipRect
+        // The anchor block — already whole, since the span contains every merge
+        // it touches.
+        val anchor = merges.rangeOf(firstRow, firstCol)
+        drawRect(
+            color = colors.selection,
+            topLeft = Offset(left, top),
+            size = Size(
+                width = geometry.spanWidthOf(firstCol, anchor.endCol, region.viewport),
+                height = geometry.spanHeightOf(firstRow, anchor.endRow, region.viewport),
+            ),
+            style = Stroke(width = ANCHOR_STROKE),
+        )
     }
 }
 
 /** Selection outline width, in physical pixels — heavier than a gridline. */
 private const val SELECTION_STROKE = 4f
+
+/**
+ * The anchor cell's outline inside a range (T34) — lighter than the range's own,
+ * so it reads as a mark *within* the selection rather than as a second selection.
+ * Still heavier than a gridline, or it would look like one.
+ */
+private const val ANCHOR_STROKE = 2f
 
 /**
  * What colour a cell's text is drawn in.

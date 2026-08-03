@@ -3,6 +3,7 @@ package com.tikoncha.darcha.feature.viewer.mvi
 import com.tikoncha.darcha.feature.viewer.data.SheetSnapshot
 import com.tikoncha.darcha.feature.viewer.search.SheetSearch
 import com.tikoncha.darcha.feature.viewer.data.WorkbookSource
+import com.tikoncha.darcha.model.CellRange
 import com.tikoncha.darcha.model.ErrorKind
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -32,7 +33,7 @@ class ViewerReducerTest {
     private fun ready(
         activeSheetId: Int = 0,
         viewport: Viewport = Viewport.INITIAL,
-        selection: CellRef? = null,
+        selection: CellRange? = null,
         scrollBounds: ScrollBounds = ScrollBounds.UNKNOWN,
         loadingSheetId: Int? = null,
     ) = ViewerState.Ready(
@@ -132,7 +133,7 @@ class ViewerReducerTest {
         val pending = ready(
             activeSheetId = 0,
             viewport = Viewport(scrollX = 500f, scrollY = 900f, zoom = 2f),
-            selection = CellRef(row = 12, col = 3),
+            selection = CellRange(12, 3, 12, 3),
             scrollBounds = ScrollBounds(999f, 999f),
             loadingSheetId = 2,
         )
@@ -387,7 +388,7 @@ class ViewerReducerTest {
     fun selectCell_storesTheCell() {
         val readyState = ready()
         val next = reduce(readyState, ViewerIntent.SelectCell(CellRef(row = 4, col = 2)))
-        assertEquals(CellRef(row = 4, col = 2), (next as ViewerState.Ready).selection)
+        assertEquals(CellRange(4, 2, 4, 2), (next as ViewerState.Ready).selection)
     }
 
     @Test
@@ -432,7 +433,7 @@ class ViewerReducerTest {
         var state: ViewerState = reduce(ready(), ViewerIntent.SelectCell(CellRef(7, 1)))
         state = reduce(state, ViewerIntent.Scroll(dx = 40f, dy = 40f))
         state = reduce(state, ViewerIntent.Zoom(scale = 1.5f, focalX = 100f, focalY = 100f))
-        assertEquals(CellRef(row = 7, col = 1), (state as ViewerState.Ready).selection)
+        assertEquals(CellRange(7, 1, 7, 1), (state as ViewerState.Ready).selection)
     }
 
     // --- search (T33) ---
@@ -540,7 +541,7 @@ class ViewerReducerTest {
 
         s = reduce(s, ViewerIntent.StepMatch(forward = true))
         assertEquals(1, (s as ViewerState.Ready).search!!.currentIndex)
-        assertEquals("the found cell becomes the selection (T29)", CellRef(2, 1), s.selection)
+        assertEquals("the found cell becomes the selection (T29)", CellRange(2, 1, 2, 1), s.selection)
 
         s = reduce(s, ViewerIntent.StepMatch(forward = true))
         s = reduce(s, ViewerIntent.StepMatch(forward = true))
@@ -564,7 +565,7 @@ class ViewerReducerTest {
         s = reduce(s, ViewerIntent.SelectCell(CellRef(9, 9)))
 
         val ready = s as ViewerState.Ready
-        assertEquals(CellRef(9, 9), ready.selection)
+        assertEquals(CellRange(9, 9, 9, 9), ready.selection)
         assertEquals("tapping elsewhere must not throw away the matches", 2, ready.search!!.matchCount)
         assertEquals(0, ready.search!!.currentIndex)
     }

@@ -103,6 +103,75 @@ in the system file picker**. Both the list and the search results ignore
 quirk on this A31, not an app behaviour — the same taps drive Darcha's own UI
 fine.
 
+### Range selection and TSV, verified by pasting (T34)
+
+**Merges were the first thing to break, as expected — and the second.** The
+first device run selected `A1:C1` correctly (the whole merged title, not a
+fragment) but the drag never extended, because the movement reached the scroll
+loop before the long-press detector claimed it. Consuming the change is not
+enough on its own: in Compose the *innermost* node sees the main pass first, and
+the detector had been added outermost. Fixed by reordering it innermost **and**
+raising a flag the scroll loop checks — the two gestures are mutually exclusive
+by intent, so saying so explicitly is cheaper than reasoning about pass order
+every time this file is touched.
+
+| Checked on the A31 | Result |
+|---|---|
+| Long-press inside a merged title, drag down-left | selection `A1:C4` — the drag reached column B, and the range **widened to C** to contain the whole merge |
+| The outline | follows the expanded rectangle, not the dragged one |
+| The grid during the drag | does **not** scroll |
+| Plain tap, unmerged cell (T29 regression) | `B2  Block` — one cell, value shown, Copy enabled |
+| Plain tap, merged cell | `A1  Title` — the anchor, outlined across the merge |
+| Copy on a range, pasted into another app | multi-cell content arrives: `Title`, `Side`, `Block` |
+| FATAL exceptions | **0** |
+
+**The anchor stays visible inside a range** — the cell the bar names first in
+`A1:C4`, drawn with its own lighter outline (2 px against the range's 4 px), and
+following the merge when the anchor is merged. Deliberately an outline rather
+than a wash over the rest of the range: a translucent fill on top of cell text is
+T28's legibility problem again, and the document is allowed to have put anything
+underneath.
+
+**Frame cost of drawing a range vs one cell — big-50k, interleaved.** Same method
+as T17 (`dumpsys gfxinfo` percentiles, debug build), but A/B/A/B in one session so
+thermal drift cannot masquerade as a result, and with short alternating scrolls
+instead of long flings so the selection stays **inside the viewport** for the
+whole run — a range flung off-screen costs nothing and would prove nothing. The
+range under measurement was `A256:F281`, 26 × 6 cells, confirmed on screen at the
+end of the run.
+
+| Selection | frames | 50th | 90th | 95th | 99th |
+|---|---|---|---|---|---|
+| One cell | 840 / 843 / 872 | 19 / 18 / 19 ms | 23 / 23 / 24 | 25 / 26 / 26 | 32 / 36 / 31 |
+| Range `A256:F281` | 846 / 863 / 867 | 19 / 19 / 19 ms | 25 / 25 / 24 | 27 / 26 / 27 | 32 / 34 / 40 |
+
+**No measurable cost**, which is what the structure predicts: a range is one
+extra stroked rect per visible region, and the four-integer rejection means the
+regions it is not in pay nothing at all. The 1–2 ms at the 90th is inside the
+run-to-run spread of the single-cell rows themselves.
+
+**"Pastes as cells" was tested, not asserted.** The TSV the production code
+produces for `synthetic/merged.xlsx` A1:C4 is
+`Title⇥⇥⏎Side⇥Block⇥⏎⇥⇥⏎⇥⇥` — four rows, three fields each. Opened in
+**Apple Numbers** and read back out of Numbers' own model rather than judged from
+a screenshot:
+
+```
+rows=4 cols=3
+row1: [Title][][]      <- the merged value at its anchor, empties beside it
+row2: [Side][Block][]
+row3: [][][]           <- an empty row keeps its place
+row4: [][][]
+```
+
+**What that does and does not prove.** It proves a real spreadsheet reads this
+text as a 4×3 grid with the values in the right cells. It does *not* prove the
+desktop clipboard path end to end: `osascript` cannot send keystrokes without
+Accessibility permission and `screencapture` cannot read the display without
+Screen Recording permission, neither of which this environment has. The Android
+clipboard half was verified separately, by pasting a range into another app on
+the device and seeing three cells' values arrive.
+
 ### Search UI on device — both themes, both locales (T33)
 
 The first M6 task a reader actually sees, so it was checked as one: `big-50k`

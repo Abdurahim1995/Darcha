@@ -155,6 +155,38 @@ Every boundary is derived from **one number per axis**: the frozen extent, `span
 Scrolling gains a **floor**: the scrolling region starts at the first unfrozen column, and letting scroll fall below that would draw the frozen columns a second time inside the body. The floor is clamped in two places on purpose — in the reducer via `ScrollBounds`, and again inside the region maths, because the renderer publishes the bounds *after* the first composition and the first frame would otherwise be drawn unclamped.
 - **Merged cells:** drawn once at the anchor cell spanning the merged bounds; covered cells are skipped.
 
+### Range selection and TSV (T34)
+
+Selection is a `CellRange`. A plain tap gives a 1×1 range, so T29's single-cell
+behaviour is the same behaviour it always was — the type widened, not the
+semantics. **Long-press then drag** extends it: a one-finger drag already
+scrolls, so range selection cannot use a plain drag without stealing it, and a
+long press requires the finger to stay still and therefore produces no scroll.
+
+**A range containing any part of a merge contains all of it.** A rectangle that
+clips half a merged title is not something a spreadsheet can express — half a
+merge holds no value and has no outline that makes sense. Widening iterates to a
+fixed point, because swallowing one merge can bring the rectangle into contact
+with another that reaches further still; it terminates because the rectangle only
+grows and the sheet is finite. The renderer does the widening, since it is the
+only place that knows where the merges are, and the outline then follows the
+expanded shape rather than the dragged one.
+
+**TSV, so a paste lands as cells rather than as one string in one cell.** Tab
+between columns, newline between rows. An empty cell is an **empty field** —
+dropping it shifts every later value into the wrong column, which turns a paste
+from an inconvenience into corrupt data. A merged cell contributes its value once
+at its anchor with empties for the cells it covers, which is what the file itself
+contains. The **displayed** text is exported, the same decision as the
+single-cell copy. A value containing a tab, newline or quote is quoted with
+internal quotes doubled: one such cell, emitted bare, silently rewrites the whole
+paste into the wrong shape.
+
+**Dragging across frozen regions** resolves every position through the same
+region-aware hit-test a tap uses (§9, T29), so a drag that starts in a frozen
+column and crosses into the body anchors on the frozen column rather than on
+whatever the body shows under that pixel.
+
 ### Search (T32/T33)
 
 **Active sheet only.** Other sheets are read on demand (§7), so searching them

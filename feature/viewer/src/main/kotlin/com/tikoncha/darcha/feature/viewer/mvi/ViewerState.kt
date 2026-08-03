@@ -2,6 +2,7 @@ package com.tikoncha.darcha.feature.viewer.mvi
 
 import com.tikoncha.darcha.feature.viewer.data.SheetSnapshot
 import com.tikoncha.darcha.feature.viewer.search.SearchResults
+import com.tikoncha.darcha.model.CellRange
 import com.tikoncha.darcha.model.ErrorKind
 
 /**
@@ -134,7 +135,12 @@ public sealed interface ViewerState {
      * @property sheet the active worksheet's cells and layout, ready to draw.
      * @property activeSheetId index into [DocumentMeta.sheetNames].
      * @property viewport current scroll/zoom.
-     * @property selection the selected cell, or `null` if nothing is selected.
+     * @property selection the selected cells, or `null` if nothing is selected
+     *   (T29, extended to a rectangle in T34). A plain tap gives a 1x1 range, so
+     *   single-cell selection is the same behaviour it always was — the type
+     *   widened, not the semantics. A drag gives a rectangle already **expanded
+     *   to whole merges** by the renderer, which is the only place that knows
+     *   where merges are.
      * @property scrollBounds how far the viewport may scroll, published by the
      *   renderer once it knows the sheet's used range at this density (§9.2).
      * @property loadingSheetId the tab being read on demand, or `null` when
@@ -148,7 +154,7 @@ public sealed interface ViewerState {
         public val sheet: SheetSnapshot,
         public val activeSheetId: Int,
         public val viewport: Viewport,
-        public val selection: CellRef?,
+        public val selection: CellRange?,
         public val scrollBounds: ScrollBounds = ScrollBounds.UNKNOWN,
         public val loadingSheetId: Int? = null,
         public val loadProgress: Float? = null,

@@ -19,7 +19,17 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tikoncha.darcha.feature.viewer.R
-import com.tikoncha.darcha.feature.viewer.mvi.CellRef
+import com.tikoncha.darcha.model.CellRange
+
+/**
+ * What the bar calls the selection: `B7` for one cell, `B7:D19` for a block —
+ * the notation a spreadsheet user already reads.
+ */
+private fun addressOf(range: CellRange): String {
+    val start = "${columnLabel(range.startCol)}${range.startRow + 1}"
+    if (range.isSingleCell) return start
+    return "$start:${columnLabel(range.endCol)}${range.endRow + 1}"
+}
 
 /**
  * What is selected, and the way to copy it (T29).
@@ -34,8 +44,9 @@ import com.tikoncha.darcha.feature.viewer.mvi.CellRef
  */
 @Composable
 internal fun SelectionBar(
-    selection: CellRef,
+    selection: CellRange,
     displayText: String,
+    onCopy: () -> String,
     modifier: Modifier = Modifier,
 ) {
     val clipboard = LocalClipboardManager.current
@@ -49,12 +60,12 @@ internal fun SelectionBar(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = "${columnLabel(selection.col)}${selection.row + 1}",
+            text = addressOf(selection),
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Text(
-            text = displayText,
+            text = if (selection.isSingleCell) displayText else "",
             style = MaterialTheme.typography.bodyMedium,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -65,12 +76,16 @@ internal fun SelectionBar(
         // and a word is more discoverable than a glyph anyway.
         TextButton(
             onClick = {
-                clipboard.setText(AnnotatedString(displayText))
+                // One cell copies its text; a range copies TSV so it pastes as
+                // cells rather than as one string in one cell.
+                clipboard.setText(AnnotatedString(onCopy()))
                 confirmCopy(context)
             },
             // Disabled rather than hidden on an empty cell: the button keeps its
             // place, so the bar does not reflow as the selection moves.
-            enabled = displayText.isNotEmpty(),
+            // A multi-cell range is always worth copying even if its anchor is
+            // empty; a single empty cell is not.
+            enabled = !selection.isSingleCell || displayText.isNotEmpty(),
         ) {
             Text(stringResource(R.string.action_copy))
         }

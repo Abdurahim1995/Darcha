@@ -1,5 +1,7 @@
 package com.tikoncha.darcha.feature.viewer.mvi
 
+import com.tikoncha.darcha.model.CellRange
+
 /**
  * The single place viewer state changes (TECH_SPEC §10): a pure function from
  * `(state, event)` to the next state.
@@ -71,7 +73,14 @@ public object ViewerReducer {
             // The renderer has already hit-tested the tap and resolved any merge
             // to its anchor (T29), so there is nothing to compute here — which is
             // the point. See ViewerIntent.SelectCell.
-            is ViewerIntent.SelectCell -> state.mapReady { it.copy(selection = intent.cell) }
+            // A tap is a 1x1 range: T29's behaviour, in T34's type.
+            is ViewerIntent.SelectCell -> state.mapReady { ready ->
+                ready.copy(
+                    selection = intent.cell?.let { CellRange(it.row, it.col, it.row, it.col) },
+                )
+            }
+
+            is ViewerIntent.SelectRange -> state.mapReady { it.copy(selection = intent.range) }
 
             // T31 already solved for the frozen bands and the margin; clamping
             // here is belt-and-braces against bounds that changed in between.
@@ -110,7 +119,10 @@ public object ViewerReducer {
                 val step = if (intent.forward) 1 else -1
                 val next = ((search.currentIndex + step) % count + count) % count
                 val updated = search.copy(currentIndex = next)
-                ready.copy(search = updated, selection = updated.currentCell)
+                ready.copy(
+                    search = updated,
+                    selection = updated.currentCell?.let { CellRange(it.row, it.col, it.row, it.col) },
+                )
             }
         }
 

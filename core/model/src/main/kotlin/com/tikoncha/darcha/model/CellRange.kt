@@ -21,6 +21,9 @@ public data class CellRange(
     /** Number of columns the range spans. */
     public val colCount: Int get() = endCol - startCol + 1
 
+    /** Whether this range covers exactly one cell. */
+    public val isSingleCell: Boolean get() = startRow == endRow && startCol == endCol
+
     /** Whether ([row], [col]) lies within this range. */
     public fun contains(row: Int, col: Int): Boolean =
         row in startRow..endRow && col in startCol..endCol

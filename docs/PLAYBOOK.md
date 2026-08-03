@@ -118,7 +118,7 @@ Prerequisites in repo: `CLAUDE.md` (root), `docs/TECH_SPEC.md`, this file.
 > The `check_fixtures.py` divergences are now **accepted rather than left red**, each with its reason printed on every run: a checker that stays red trains people to skim past it, and then the next real divergence goes unnoticed. `docs/FIXTURE_RECIPES.md` was corrected to match what the files actually contain — including an instruction to type the comma decimals deliberately, since that cell turned out to be the most useful one in the corpus.
 
 **M6 — v1.2**
-- [x] T31 Scroll to cell · [x] T32 Search engine · [x] T33 Search UI · [ ] T34 Range selection + copy
+- [x] T31 Scroll to cell · [x] T32 Search engine · [x] T33 Search UI · [x] T34 Range selection + copy
 
 > **T31 — DONE.** `PaneRegions.scrollToShow` plus a 1-D solver, `solveAxisScroll`. Pure geometry, no Compose, and **not wired to anything** — T33 owns that.
 >
@@ -153,6 +153,19 @@ Prerequisites in repo: `CLAUDE.md` (root), `docs/TECH_SPEC.md`, this file.
 > **The two-level highlight survives the document's own fills, verified rather than assumed.** Each level carries two candidates and `TextLegibility.betterOn` picks per cell — T28's measurement reused, not re-derived. On device: on the dark surface the current match is amber + a bright yellow outline; on the light surface, slate + orange; **on `styles-basic`'s yellow fill the outline swaps to orange in both themes**, because the yellow one would have vanished into it. Unmatched cells untouched, and the red text stays red.
 >
 > Checked on the A31 in **both themes and both locales**: `big-50k` (`zeta`, 8,333 matches), a jump to row 49,998 landing with margin via T31, the empty state with next/previous disabled, and a manual tap keeping the matches. Zero crashes. `docs/PERF.md` has the table. Tests 428 → 439.
+>
+> **T34 — DONE.** Selection is a `CellRange` — the `:core:model` type, not a viewer-side twin: a rectangle of cells is a document concept, `MergeIndex` already speaks it, and a second type would exist only to be converted at every boundary. A plain tap is a 1×1 range, so **T29's behaviour is unchanged** — the type widened, not the semantics. Verified on device after the change: a tap on an ordinary cell gives `B2  Block`, and a tap on a merged one gives `A1  Title` outlined across the merge.
+>
+> **Merges did break first, and the fix is a fixed point rather than a pass.** A range containing any part of a merge contains all of it — half a merge holds no value and has no honest outline. Widening iterates because swallowing one merge can bring the rectangle into contact with another that reaches further; it terminates because the rectangle only grows and the sheet is finite. Both cases are tested, including an eight-step staircase. On device: a drag from inside the merged title down to **column B** selected **`A1:C4`** — the range widened to C on its own, and the outline followed.
+>
+> **Extending is long-press-then-drag, and there is exactly one way.** The playbook asked for a drag *and* a shift-style extend; a phone has no shift, and the two obvious substitutes both cost more than they give — a second tap-to-extend mode makes an ordinary tap ambiguous, and a drag handle is furniture on a screen this size. A plain tap collapses the range back to one cell, which is the same gesture doing the same thing it always did. **Long-press** specifically because a one-finger drag already scrolls: a long press requires the finger to be still, so the two gestures cannot both claim the same movement.
+>
+> **They still collided, and consuming the event was not enough.** The first device run selected the merge correctly but never extended, because the movement reached the scroll loop first: in Compose the **innermost** node sees the main pass first, and the detector had been added outermost. Fixed by reordering it innermost *and* raising a flag the scroll loop checks — the two gestures are mutually exclusive by intent, so saying so outright is cheaper than re-deriving pass order every time the file is touched.
+>
+> **TSV, and "pastes as cells" was tested rather than asserted.** Tab between columns, newline between rows; an empty cell is an **empty field**, since dropping it shifts every later value into the wrong column and turns a paste from an inconvenience into corrupt data; a merged cell contributes its value once at its anchor with empties beside it, which is what the file itself contains; the **displayed** text, the same decision as T29. A value containing a tab, newline or quote is quoted with internal quotes doubled — one such cell emitted bare silently rewrites the whole paste. The real output for `A1:C4` was opened in **Apple Numbers** and read back out of Numbers' own model: `rows=4 cols=3`, `row1: [Title][][]`, `row2: [Side][Block][]`, two empty rows keeping their place. The Android clipboard half was checked separately by pasting into another app.
+>
+> **Every drag position resolves through T29's region-aware hit-test**, so a drag that starts in a frozen column and crosses into the body anchors where the reader is pointing rather than on whatever the body holds under that pixel; all four regions are covered again in `PaneRegionsTest`, across zooms. The anchor cell keeps its own lighter outline inside the range. **No measurable frame cost** on big-50k, measured A/B/A/B with the range on screen throughout — see `docs/PERF.md`. Tests 439 → 459.
+
 
 ---
 

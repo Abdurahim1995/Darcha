@@ -111,6 +111,7 @@ class MainActivity : ComponentActivity() {
                         onBoundsChanged = { viewModel.onScrollBoundsChanged(it) },
                         onSelectSheet = { viewModel.dispatch(ViewerIntent.SwitchSheet(it)) },
                         onSelect = { viewModel.dispatch(ViewerIntent.SelectCell(it)) },
+                        onSelectRange = { viewModel.dispatch(ViewerIntent.SelectRange(it)) },
                         onStopMotion = { viewModel.stopMotion() },
                         onSearchOpen = { viewModel.dispatch(ViewerIntent.SetSearchOpen(it)) },
                         onSearchQuery = { viewModel.dispatch(ViewerIntent.SetSearchQuery(it)) },

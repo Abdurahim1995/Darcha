@@ -2,6 +2,7 @@ package com.tikoncha.darcha.feature.viewer.geometry
 
 import com.tikoncha.darcha.feature.viewer.mvi.CellRef
 import com.tikoncha.darcha.feature.viewer.mvi.Viewport
+import com.tikoncha.darcha.model.CellRange
 import com.tikoncha.darcha.model.FrozenPanes
 import com.tikoncha.darcha.model.SheetLayout
 import org.junit.Assert.assertEquals
@@ -449,6 +450,97 @@ class PaneRegionsTest {
                 CellRef(row = 0, col = 0),
                 regions.cellAt(corner.left + 1f, corner.top + 1f, g),
             )
+        }
+    }
+
+    // --- a drag that crosses regions (T34) ---
+    //
+    // Range selection resolves every drag position through the same region-aware
+    // hit-test a tap uses, so a drag that starts in the body and crosses into a
+    // frozen band must land on the cell the reader is pointing at rather than
+    // the one the body would have had under that pixel. This is that hit-test's
+    // second workout, on both endpoints instead of one.
+
+    /** The cell under a point one pixel inside the named region's top-left. */
+    private fun cornerOf(regions: List<PaneRegion>, pane: Pane, g: GridGeometry): CellRef? {
+        val r = regions.first { it.pane == pane }
+        return regions.cellAt(r.left + 1f, r.top + 1f, g)
+    }
+
+    @Test
+    fun aDragBetweenAnyTwoRegions_resolvesBothEndsInTheirOwn() {
+        val (_, regions) = frozenAndScrolled()
+        val g = geometry(
+            columnWidths = (0..9).associateWith { 10.0 },
+            rowHeights = (0..29).associateWith { 20.0 },
+        )
+        val corner = cornerOf(regions, Pane.CORNER, g)!!
+        val top = cornerOf(regions, Pane.TOP, g)!!
+        val left = cornerOf(regions, Pane.LEFT, g)!!
+        val body = cornerOf(regions, Pane.BODY, g)!!
+
+        // Each endpoint keeps its own region's answer -- the four are distinct.
+        assertEquals(CellRef(0, 0), corner)
+        assertEquals(CellRef(0, 4), top)
+        assertEquals(CellRef(8, 0), left)
+        assertEquals(CellRef(8, 4), body)
+
+        // ...and a drag between any two of them spans exactly those cells.
+        val merges = MergeIndex.of(emptyList())
+        assertEquals(
+            "body to frozen corner",
+            CellRange(0, 0, 8, 4),
+            merges.expandedRange(body, corner),
+        )
+        assertEquals(
+            "frozen column into the body",
+            CellRange(8, 0, 8, 4),
+            merges.expandedRange(left, body),
+        )
+        assertEquals(
+            "frozen row into the body",
+            CellRange(0, 4, 8, 4),
+            merges.expandedRange(top, body),
+        )
+    }
+
+    @Test
+    fun aDragStartingInAFrozenColumn_staysAnchoredThere() {
+        val (_, regions) = frozenAndScrolled()
+        val g = geometry(
+            columnWidths = (0..9).associateWith { 10.0 },
+            rowHeights = (0..29).associateWith { 20.0 },
+        )
+        val start = cornerOf(regions, Pane.LEFT, g)!!
+        assertEquals("the frozen column, not whatever the body shows there", 0, start.col)
+
+        // Dragging right into the body keeps column 0 as the range's left edge,
+        // even though the body's first column is 4.
+        val end = cornerOf(regions, Pane.BODY, g)!!
+        val range = MergeIndex.of(emptyList()).expandedRange(start, end)
+        assertEquals(0, range.startCol)
+        assertEquals(4, range.endCol)
+    }
+
+    @Test
+    fun draggingAcrossRegions_holdsAtEveryZoom() {
+        val g = geometry(
+            columnWidths = (0..9).associateWith { 10.0 },
+            rowHeights = (0..29).associateWith { 20.0 },
+        )
+        val p = panes(frozenCols = 1, frozenRows = 2, geometry = g)
+        val merges = MergeIndex.of(emptyList())
+
+        for (zoom in ZOOMS) {
+            val regions = regionsOf(p, Viewport(p.minScrollX, p.minScrollY, zoom))
+            val corner = cornerOf(regions, Pane.CORNER, g)!!
+            val body = cornerOf(regions, Pane.BODY, g)!!
+            val range = merges.expandedRange(corner, body)
+
+            assertEquals("zoom $zoom: the frozen corner anchors at A1", 0, range.startRow)
+            assertEquals(0, range.startCol)
+            assertTrue("zoom $zoom: the body end is past the frozen bands", range.endRow >= 2)
+            assertTrue(range.endCol >= 1)
         }
     }
 

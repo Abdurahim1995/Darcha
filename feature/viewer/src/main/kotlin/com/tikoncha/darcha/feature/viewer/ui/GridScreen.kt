@@ -30,6 +30,7 @@ import com.tikoncha.darcha.feature.viewer.mvi.DocumentMeta
 import com.tikoncha.darcha.feature.viewer.mvi.ScrollBounds
 import com.tikoncha.darcha.feature.viewer.mvi.SearchState
 import com.tikoncha.darcha.feature.viewer.mvi.Viewport
+import com.tikoncha.darcha.model.CellRange
 import com.tikoncha.darcha.model.DateNames
 import com.tikoncha.darcha.model.FormattedValueCache
 
@@ -56,8 +57,9 @@ internal fun GridScreen(
     onResetZoom: (focalX: Float, focalY: Float) -> Unit,
     onBoundsChanged: (ScrollBounds) -> Unit,
     onSelectSheet: (Int) -> Unit,
-    selection: CellRef?,
+    selection: CellRange?,
     onSelect: (CellRef?) -> Unit,
+    onSelectRange: (CellRange?) -> Unit,
     onStopMotion: () -> Boolean,
     search: SearchState?,
     onSearchOpen: (Boolean) -> Unit,
@@ -129,6 +131,7 @@ internal fun GridScreen(
             currentMatch = search?.currentCell,
             onReveal = onReveal,
             onSelect = onSelect,
+            onSelectRange = onSelectRange,
             onStopMotion = onStopMotion,
         )
 
@@ -145,6 +148,7 @@ internal fun GridScreen(
             SelectionBar(
                 selection = selection,
                 displayText = sheet.displayTextAt(selection, formatted),
+                onCopy = { sheet.tsvOf(selection, formatted) },
             )
         }
 
@@ -186,10 +190,10 @@ internal fun GridScreen(
  * An empty cell yields `""`, and the bar's Copy button disables rather than
  * putting an empty string on the clipboard.
  */
-private fun SheetSnapshot.displayTextAt(cell: CellRef, formatted: FormattedValueCache): String {
-    val row = data.row(cell.row) ?: return ""
-    val value = row.valueAt(cell.col) ?: return ""
-    return formatted.format(value, row.styleIdAt(cell.col) ?: 0)
+private fun SheetSnapshot.displayTextAt(range: CellRange, formatted: FormattedValueCache): String {
+    val row = data.row(range.startRow) ?: return ""
+    val value = row.valueAt(range.startCol) ?: return ""
+    return formatted.format(value, row.styleIdAt(range.startCol) ?: 0)
 }
 
 /**

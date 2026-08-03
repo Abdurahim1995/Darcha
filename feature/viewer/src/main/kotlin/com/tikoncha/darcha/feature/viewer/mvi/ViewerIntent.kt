@@ -3,6 +3,7 @@ package com.tikoncha.darcha.feature.viewer.mvi
 import com.tikoncha.darcha.feature.viewer.data.SheetSnapshot
 import com.tikoncha.darcha.feature.viewer.data.WorkbookSource
 import com.tikoncha.darcha.feature.viewer.search.SearchResults
+import com.tikoncha.darcha.model.CellRange
 import com.tikoncha.darcha.model.ErrorKind
 
 /**
@@ -77,6 +78,17 @@ public sealed interface ViewerIntent : ViewerEvent {
      * cells that has none (`MergeIndex.anchorOf`, T18).
      */
     public data class SelectCell(public val cell: CellRef?) : ViewerIntent
+
+    /**
+     * Select a rectangle of cells — a drag, rather than a tap (T34).
+     *
+     * The range arrives **already expanded to whole merges**. A rectangle that
+     * clips half a merged title is not a thing a spreadsheet can express, and the
+     * only place that knows where the merges are is the renderer, so it widens
+     * the rectangle before sending it. Same split as [SelectCell]: resolution
+     * happens where the knowledge is, and the reducer stores a fact.
+     */
+    public data class SelectRange(public val range: CellRange?) : ViewerIntent
 
     /** Open the search bar, or close it and drop its results (T33). */
     public data class SetSearchOpen(public val open: Boolean) : ViewerIntent
