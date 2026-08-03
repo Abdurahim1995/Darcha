@@ -1,4 +1,4 @@
-# Darcha — Full Build Playbook (M1 → M5, T0 → T30)
+# Darcha — Full Build Playbook (M1 → M6, T0 → T34)
 
 Every task below is a ready-to-paste Claude Code prompt. **One task = one session.** This file replaces `M1_PLAYBOOK.md`.
 
@@ -116,6 +116,9 @@ Prerequisites in repo: `CLAUDE.md` (root), `docs/TECH_SPEC.md`, this file.
 > **M5 exit criteria — met. v1.1.0.** Three things v1.0.0 got *wrong* rather than three it was missing: a renamed `.ods` called damaged, dark mode guessing at text colour, and — found by the corpus itself — every Google Sheets frozen pane silently discarded. Plus cell selection and copy, the one feature. `versionCode 2`, `versionName 1.1.0`.
 >
 > The `check_fixtures.py` divergences are now **accepted rather than left red**, each with its reason printed on every run: a checker that stays red trains people to skim past it, and then the next real divergence goes unnoticed. `docs/FIXTURE_RECIPES.md` was corrected to match what the files actually contain — including an instruction to type the comma decimals deliberately, since that cell turned out to be the most useful one in the corpus.
+
+**M6 — v1.2**
+- [ ] T31 Scroll to cell · [ ] T32 Search engine · [ ] T33 Search UI · [ ] T34 Range selection + copy
 
 ---
 
@@ -722,4 +725,147 @@ Lock whatever the new producer files actually contain.
 Acceptance: every non-empty producer folder is golden-locked and described;
 README's "half the corpus comes from Microsoft Excel Online" line is updated to
 match reality.
+```
+
+---
+
+# M6 — v1.2
+
+**Theme: making a large sheet navigable.** Search is the biggest remaining gap.
+In a 50,000-row file the only way to find anything today is to scroll, and no
+amount of rendering fidelity fixes that.
+
+**`:core:parser` stays FROZEN — verified, not assumed.** Everything these four
+tasks need is already public API:
+
+| Needed | Already exists |
+|---|---|
+| Walk the sparse model | `SheetData.rows: Map<Int, Row>`, and `Row.columns` / `values` / `styleIds` |
+| The string a cell displays | `FormattedValueCache.format(value, styleId)` |
+| A rectangular region | `CellRange(startRow, startCol, endRow, endCol)` in `:core:model` |
+| Viewport, bounds, region origins | `Viewport`, `ScrollBounds`, `PaneRegions`, `GridGeometry` |
+
+So this milestone is viewer-side from end to end. `:core:model` is expected to be
+untouched as well; if any task finds it needs something there, **stop and ask**
+rather than widening the change — the same rule that has applied since T15.6.
+
+## T31 — Scroll to cell
+
+```text
+A programmatic way to bring a cell into view. Prerequisite for search, and
+useful on its own.
+
+- Given a CellRef, produce the Viewport that shows it, clamped to ScrollBounds.
+- Leave MARGIN: a cell flush against the edge of the screen is technically
+  visible and practically useless. Decide the margin (in cells or in content
+  px), state it, and make it survive zoom.
+- CRITICAL: the target must land in the BODY region. Frozen rows and columns
+  are drawn OVER the body (TECH_SPEC §9, T19), so a naive scroll can park the
+  target underneath a frozen strip where it is invisible while the maths
+  believes it is on screen. The scroll floor is minScrollX/minScrollY, but that
+  is not sufficient on its own -- work out what is, and write down why.
+- A cell already comfortably visible must NOT move the viewport. Scrolling on
+  every match when the next match is already on screen is disorienting.
+- A target inside a merged range should bring the WHOLE range into view where
+  it fits, or its anchor when it does not.
+- Pure geometry: no Compose, no coroutines. Unit-testable, and tested at
+  several zoom levels and against all four pane configurations (none, rows,
+  columns, both).
+
+Acceptance: unit tests covering already-visible, off-screen in each of four
+directions, clamped at each bound, inside a merge, and -- the one that matters
+-- a target that would otherwise land under a frozen strip.
+```
+
+## T32 — Search engine
+
+```text
+Find matches within the ACTIVE SHEET. Cross-sheet search is deferred to a later
+version; say so in the code and the spec rather than leaving it ambiguous.
+
+Decisions to make and document, not guess:
+
+- MATCH AGAINST DISPLAYED TEXT OR RAW VALUE? T29 chose the displayed string for
+  copy, and searching is the same question wearing a different hat: a user
+  hunting "01-15-24" is looking at the screen, but one hunting "45306" may know
+  the underlying serial. Consider matching BOTH and say why -- including what
+  that costs, and what a match count means when one cell matches on two
+  different strings.
+- BEHAVIOUR DURING A PROGRESSIVE PARSE. Rows arrive in chunks (T15.5), so a
+  search started at 20% sees a fifth of the sheet. Decide: search what is
+  loaded and re-run as more arrives, refuse until complete, or something else.
+  Whatever it is, the match count must never silently lie about a sheet that is
+  still growing.
+- CASE SENSITIVITY, and partial vs whole-cell matching. Pick defaults that suit
+  a viewer rather than a database, and justify them.
+
+Performance, and this is where it gets interesting:
+
+- big-50k is ~350k cells. Formatting every one of them is not free, and
+  FormattedValueCache holds 2,048 entries -- sized for a viewport, not for a
+  full-sheet scan. A naive search will evict everything the renderer needs and
+  leave the grid re-measuring text on the next frame. Do not do that. Decide
+  how search reads cell text without trashing the viewport's cache, and record
+  the reasoning where the cache lives.
+- Must not block the UI. Must be cancellable -- a user typing "January" issues
+  seven searches, and six of them are dead the moment the next keystroke lands.
+- No per-frame allocation in whatever the renderer ends up reading.
+
+Acceptance: search over big-50k finds known matches with the UI still
+responsive; measured on the A31 and recorded in docs/PERF.md, including what
+the cache did. Unit tests for the matching rules, with fixtures.
+```
+
+## T33 — Search UI
+
+```text
+The surface for T32, using T31 to move.
+
+- A search bar: open it, type, close it. Decide where it lives relative to the
+  document header and the sheet tabs, and what it displaces.
+- Match count -- and an honest empty state. "0/0" and "still searching" are
+  different things and must look different.
+- Next / previous navigation, wrapping at the ends. Wrapping should be
+  perceptible; silently jumping from the last match to the first looks like a
+  bug.
+- The CURRENT match must be visually distinct from the other matches, not just
+  selected. Two levels of highlight, both legible over any cell fill the
+  document might have -- see TextLegibility (T28) for why "over any fill" is
+  not a given.
+- Integrate with T29 selection: decide whether the current match IS the
+  selection or sits alongside it, and make the copy button do the obvious thing
+  either way.
+- All copy in strings.xml, both locales, and ErrorCopyTest's word-boundary
+  rules apply. Verified in both themes on device.
+
+Acceptance: find, step through, wrap, and close, on big-50k in both locales and
+both themes, on device.
+```
+
+## T34 — Range selection and copy
+
+```text
+Extend T29's single cell to a rectangle.
+
+- Selection becomes a range. CellRange already exists in :core:model -- decide
+  whether to reuse it or keep a viewer-side type, and say why.
+- Two ways to extend, and both should work: a drag, and a shift-style extend
+  from the existing anchor. Decide what a plain tap does to an existing range.
+- Drawn across the whole range, with the anchor still distinguishable. The
+  outline must clip correctly per pane region (T19/T29) -- a range spanning a
+  freeze boundary is drawn in more than one region and must not leak across the
+  seam.
+- MERGED CELLS: a range that touches a merge must contain the whole merge, not
+  a slice of it, and the drawn outline must follow. This is the case that will
+  be wrong first.
+- COPY AS TSV so it pastes into a spreadsheet as cells rather than one blob:
+  tab between columns, newline between rows, empty cells preserved as empty
+  fields. Decide what a merged range contributes -- the value once, at its
+  anchor, and empty for the covered cells, or something else. Say which.
+- Hot path unchanged: still no per-frame allocation, and drawing a range must
+  not cost measurably more than drawing one cell on big-50k.
+
+Acceptance: drag-select across a freeze boundary and across a merge on device;
+paste the result into another app and confirm it arrives as a grid, not a
+string. Frame cost measured on big-50k.
 ```
