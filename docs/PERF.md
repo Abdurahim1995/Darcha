@@ -103,6 +103,85 @@ in the system file picker**. Both the list and the search results ignore
 quirk on this A31, not an app behaviour — the same taps drive Darcha's own UI
 fine.
 
+### v1.2.0 release verification
+
+The whole point of running this against the **release** build is that R8 and
+resource shrinking change what is in the APK, and T26 proved that with a real
+loss — three error strings removed because nothing constructed the class that
+used them. So the string check comes first, from the shipping bytes:
+
+`aapt2 dump resources` finds all eleven of v1.2's new strings alive —
+`search_label`, `search_previous`, `search_next`, `search_running`,
+`search_no_matches`, `search_position`, `search_position_partial`,
+`action_search`, `action_close`, `action_copy`, `copied_to_clipboard` — each with
+both its default and its `uz` value.
+
+APK **1,327,426 bytes (1.27 MB)**, up from 1.11 MB at v1.1.0, against the
+TECH_SPEC §5 budget of 5 MB. Signed `CN=Darcha, O=Darcha, C=UZ`,
+`versionCode=3 versionName=1.2.0`, and `aapt2 dump permissions` still lists **no
+INTERNET permission**.
+
+**The fixture set**, opened one by one on the A31 from the signed build:
+`values-basic`, `excel-dates`, `styles-basic`, `merged`, `frozen-both`,
+`multisheet`, `column-widths`, `e-truncated`, `big-50k` and the three Google
+Sheets exports. All render. `gs-merged-frozen` still shows its **two** frozen
+rows, which is the `ySplit="2.0"` fix from v1.1.0 holding in the shipping build.
+
+An honest note on how that went: the three `gs-*` files had been **deleted from
+the device** since the v1.1.0 session while MediaStore still held rows for them,
+so the first attempt showed the "could not be read" screen. That was the app
+being right, not a bug — the files were pushed again and all three opened.
+
+**Search, driven through the release build.** On `big-50k`, `zeta` gives
+`8333 dan 1`; three Nexts give `8333 dan 4` at `F24`; four Previouses wrap past
+the start to `8333 dan 8333` at **`F49998`**, which is also T31 scrolling ~50,000
+rows and landing the match in view. A query with no matches shows `Topilmadi`
+with next/previous disabled. Stepping selects the match — the bar reads
+`F49998  zeta` — as T33 decided.
+
+**The two-level highlight was measured, not eyeballed.** At thumbnail scale a
+wash over a saturated yellow is genuinely hard to judge, so the pixels were read
+out of the screenshots directly. `styles-basic` B1 is the document's own
+`#ffff00` fill; searching `l` matches `Bold`, `Fill`, `Italic`.
+
+| | Dark | Light |
+|---|---|---|
+| plain match on our surface | `#664f12` = `matchWash` amber over the dark surface | `#b2b2ba` = `matchWashAlt` slate over `#fdf7ff` |
+| plain match on the document's yellow | `#b3b714` = `matchWashAlt` slate over `#ffff00` | `#b3b714`, the same |
+| current-match outline on that yellow | `#E65100` deep orange | `#E65100` deep orange |
+
+Each value reproduces exactly from the declared colour and its alpha, so the
+per-cell `betterOn` choice is doing what T28's rule says: on our own surface the
+amber wash wins in dark and the slate wins in light, and **on the author's yellow
+the slate wins in both** — the amber would have vanished into it. The
+current-match outline resolves to deep orange over that fill in both themes.
+
+**Range selection and TSV, from the shipping bytes.** A long-press drag on
+`merged.xlsx` that only reached column B produced **`A1:C6`** — widened to C by
+the merged title — with the anchor block `A1:C1` outlined inside the range.
+Copy, then paste into a text field, and the clipboard reads
+
+```
+Title→→⏎Side→Block→⏎→→⏎→→⏎→→⏎→→
+```
+
+Checked against the file rather than against expectation: `merged.xlsx` holds
+`A1="Title"`, `A2="Side"`, `B2="Block"` with merges `A1:C1`, `A2:A4`, `B2:C3`.
+So row 2 carrying *both* `Side` and `Block` is correct — they are both anchors on
+row 2, and `C2` is empty because `B2:C3` covers it. The renderer draws them lower
+because merged text is centred in its block, which is exactly the kind of
+mismatch that would have made an eyeball check disagree with the truth.
+
+**Zero crashes** across the whole run — `logcat -b crash` empty, no
+`FATAL EXCEPTION`.
+
+One thing this run could **not** do from adb: the A31 ignores
+`cmd uimode night no` and `settings put` (One UI keeps its own state, and writing
+the key desynced the Settings radio from the actual mode). The theme was switched
+by tapping Samsung's own Light/Dark control in Display settings, which does work
+— worth writing down, because the obvious command silently reports success and
+changes nothing.
+
 ### Range selection and TSV, verified by pasting (T34)
 
 **Merges were the first thing to break, as expected — and the second.** The

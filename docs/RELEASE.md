@@ -72,7 +72,7 @@ $ANDROID_HOME/build-tools/36.0.0/apksigner verify --print-certs app/build/output
 
 ```bash
 export JAVA_HOME=$(/usr/libexec/java_home -v 17)
-./gradlew clean build            # all 319 tests must pass
+./gradlew clean build            # all 459 tests must pass
 ./gradlew :app:assembleRelease   # signed APK, R8 + resource shrinking
 ```
 
@@ -82,7 +82,8 @@ Then check the size has not drifted:
 ls -l app/build/outputs/apk/release/app-release.apk
 ```
 
-The v1.0.0 APK is **1.10 MB**, against the TECH_SPEC §5 budget of 5 MB.
+The v1.0.0 APK is **1.10 MB** and v1.1.0 **1.11 MB**, against the TECH_SPEC §5
+budget of 5 MB.
 
 ### Version numbers
 
@@ -92,6 +93,8 @@ uploaded build, even a re-upload of the same `versionName`.
 | Release | `versionCode` | `versionName` |
 |---|---|---|
 | v1.0.0 | 1 | `1.0.0` |
+| v1.1.0 | 2 | `1.1.0` |
+| v1.2.0 | 3 | `1.2.0` |
 
 ---
 
