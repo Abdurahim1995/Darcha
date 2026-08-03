@@ -248,6 +248,60 @@ wrong colour, but it is visible — and closing it needs the theme part, the
 own task, not a rider on this one. `StylesParserTest.themes2To11_areStillFlattenedToBlack_aKnownGap`
 pins the current behaviour so that changing it is a deliberate act.
 
+### Launcher icon, and the safe zone that was got wrong
+
+A four-pane window: *darcha* means little window, and a four-pane window is
+already a spreadsheet grid — one shape, two readings. The panes are deliberately
+unequal (interior 38 × 32, split **14:21** across and **11:18** down), so the
+mullions cross above and left of centre. That offset is what carries the
+spreadsheet reading; an evenly quartered window is just a window. One pane is
+filled — the top-left, because that is where a spreadsheet starts.
+
+Pure vector, no raster assets anywhere in the app.
+
+**The safe zone is a circle, not a square, and the first version confused the
+two.** An adaptive icon's canvas is 108 units; the mask can show at most a
+**36-unit radius** and the guidance is to stay inside **33**. The original
+artwork was inset 21 units on each side — a 66-unit *square* — which the file's
+own comment described as "the 66dp safe zone". The sides fitted; the corners did
+not. Its frame reached **r ≈ 38.5**, past even what the mask can show, so circle
+and One UI masks shaved the corners and the white frame stopped reading as a
+window inside a field and started reading as the icon's silhouette.
+
+The replacement is measured rather than assumed. The outermost point is a corner
+arc: centre offset (17, 14) → r = 22.02, plus the 5-unit corner radius and half
+the 6-unit stroke → **r = 30.02**, leaving ~3 units inside the recommendation and
+~6 inside the hard limit. **Check the corners, not the edges.**
+
+**Stroke weights follow from the smallest size the icon must survive.** The
+canvas maps its centre 72 units onto the icon, so one unit is `size / 72` dp — at
+a 48dp icon, 0.667dp, which is 0.667px on an mdpi screen:
+
+| Units | at a 48dp icon, mdpi |
+|---|---|
+| 2 | 1.33 px — sub-pixel, aliases into a smudge |
+| 3 | 2.00 px — the floor for a crisp line |
+| 6 | 4.00 px |
+
+Hence **frame 6, mullions 3 — a 2:1 ratio**, which keeps the frame visibly
+heavier (as both real windows and real spreadsheets are drawn) while both land on
+whole pixels. Data lines inside the panes were designed and dropped for the same
+reason: two 2-unit strokes are 1.33px each and collapse into one mark.
+
+**The monochrome layer is designed, not inherited.** A themed icon is re-tinted
+whole, so the accent pane and the white frame become the same ink; filling the
+top-left pane would butt it against a 6-wide frame and a 3-wide mullion and merge
+into a blob at 48dp. The accent is therefore an inset block with 3 units of clear
+ground on every side. A *hollow* pane was the first idea and the geometry rules
+it out: that pane's interior is 14 × 11, the smallest of the four, and an outline
+inset far enough not to touch and stroked heavily enough to survive leaves a hole
+of about 5 × 2 units — 3.3 × 1.3 px at 48dp, which closes up.
+
+Deliberately absent: any letterform, and any Excel/Word/PDF-style mark inside the
+panes. The letter said nothing to anyone who does not read Latin script; the
+format marks are unreadable at 48dp, promise formats this app does not open, and
+are other companies' trademarks.
+
 ### Localization (T24)
 
 Default English, `values-uz` in Uzbek latin. Uzbek is the primary audience, so it

@@ -1,15 +1,46 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    Adaptive icon foreground (T24): a little window.
+    Adaptive icon foreground: a four-pane window.
 
-    "Darcha" means *little window*, and a window with panes is already a grid —
-    the same shape as a spreadsheet, without having to draw a spreadsheet. The
-    playbook's original "K" motif was a letterform from when the app was called
-    Katak; a letter would say nothing about what the app does, and nothing at all
-    to someone who does not read Latin script.
+    "Darcha" means *little window*, and a four-pane window is already a
+    spreadsheet grid — one shape, two readings. The panes are deliberately
+    unequal: a short top row and a narrow left column, the proportions a
+    spreadsheet has because of its header row and row-number column. An evenly
+    quartered window would read as a window and nothing more.
 
-    Everything sits inside the 66dp safe zone of the 108dp canvas (21dp inset on
-    each side), so no launcher mask can clip the frame.
+    THE FOREGROUND IS ARTWORK ONLY. It draws no outer shape of its own — the
+    silhouette comes from the launcher's mask. The previous version's frame ran
+    to r≈38.5 from centre, past even the 36 the mask can show, so circle and
+    One UI masks shaved its corners and the white frame became the icon's
+    outline instead of a window inside a field.
+
+    SAFE ZONE, measured rather than assumed. The canvas is 108 with centre
+    (54,54); the mask shows at most r=36 and the guidance is to stay inside
+    r=33. The outermost point here is a corner arc:
+
+        arc centre (37,40) -> offset (17,14) -> r = 22.02
+        + corner radius 5 + half stroke 3     = r = 30.02
+
+    That leaves ~3 units of room inside the recommended circle and ~6 inside the
+    hard limit. Nothing else comes close: the straight edges reach r=25 and 22.
+
+    STROKE WEIGHTS. The canvas maps its centre 72 units onto the icon, so one
+    unit is size/72 dp. At a 48dp icon that is 0.667dp, which is 0.667px on an
+    mdpi screen:
+
+        2 units -> 1.33 px   sub-pixel; aliases into a smudge
+        3 units -> 2.00 px   the floor for a crisp line
+        6 units -> 4.00 px
+
+    Hence frame 6, mullions 3 — a 2:1 ratio that survives the smallest size
+    while keeping the frame visibly heavier, which is how both real windows and
+    real spreadsheets are drawn. No data lines inside the panes: two 2-unit
+    strokes would be 1.33px each at 48dp and collapse into one mark.
+
+    PALETTE. Deep indigo ground, white joinery, one warm pane. Measured
+    contrast: white on ground 12.1:1, amber on ground 5.0:1, amber against the
+    white that borders it 2.4:1 — enough to keep the pane's edges legible
+    without the amber competing with the frame.
 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
@@ -17,27 +48,35 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- Window frame: a rounded square, drawn as a stroke. -->
+    <!--
+        One pane lit, the way a selected cell is — and it is the top-left one,
+        because that is where a spreadsheet starts. Drawn first so the frame and
+        mullions land on top of it and it fills its cell exactly.
+    -->
     <path
-        android:pathData="M30,30 h48 a6,6 0 0 1 6,6 v36 a6,6 0 0 1 -6,6 h-48 a6,6 0 0 1 -6,-6 v-36 a6,6 0 0 1 6,-6 z"
+        android:pathData="M35,38 H49 V49 H35 Z"
+        android:fillColor="#F0912A" />
+
+    <!-- The window frame: 44 x 38, stroked at 6. -->
+    <path
+        android:pathData="M37,35 H71 A5,5 0 0 1 76,40 V68 A5,5 0 0 1 71,73 H37 A5,5 0 0 1 32,68 V40 A5,5 0 0 1 37,35 Z"
         android:strokeColor="#FFFFFF"
-        android:strokeWidth="5"
+        android:strokeWidth="6"
         android:fillColor="#00000000"
         android:strokeLineJoin="round" />
 
-    <!-- The mullions that make it panes — and a grid. -->
+    <!--
+        The mullions, at 3 — half the frame. They do not cross at the centre:
+        the interior is 38 x 32, split 14:21 across and 11:18 down, so the
+        crossing sits up and to the left at (50.5, 50.5). That offset is the
+        whole spreadsheet reading.
+    -->
     <path
-        android:pathData="M54,30 V78"
+        android:pathData="M50.5,35 V73"
         android:strokeColor="#FFFFFF"
-        android:strokeWidth="5" />
+        android:strokeWidth="3" />
     <path
-        android:pathData="M24,54 H84"
+        android:pathData="M32,50.5 H76"
         android:strokeColor="#FFFFFF"
-        android:strokeWidth="5" />
-
-    <!-- One pane lit, the way a selected cell is. Keeps the mark from reading
-         as a plain window and hints that this one is about the contents. -->
-    <path
-        android:pathData="M57.5,57.5 h23 v17 h-23 z"
-        android:fillColor="#D0BCFF" />
+        android:strokeWidth="3" />
 </vector>
