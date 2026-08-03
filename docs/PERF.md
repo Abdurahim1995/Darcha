@@ -103,6 +103,35 @@ in the system file picker**. Both the list and the search results ignore
 quirk on this A31, not an app behaviour — the same taps drive Darcha's own UI
 fine.
 
+### v1.1.0 release verification — and the regression it caught
+
+Running the fixture set against the release build found a **real regression from
+T28**, before the tag went on. Worth recording as a process note as much as a
+bug: it was caught by looking at a *screenshot at readable magnification*, and it
+had passed a device check one task earlier because that crop was too small to
+judge — the earlier note claiming "black on yellow, unchanged" was simply wrong
+about a cell that never chose black.
+
+`synthetic/styles-basic.xlsx` B1 is `fontId=0` — `<color theme="1"/>`, so no
+colour chosen — on a solid yellow fill. T28's rule returned the running theme's
+text colour whenever nothing was chosen, without looking at the fill, so dark
+mode drew **light text on yellow**. v1.0.0 got this right by accident, resolving
+theme 1 to black.
+
+The fix is in the rule: when the document chose no font colour but did choose a
+fill, the background is the author's while the foreground is ours, so the colour
+is picked for contrast against *that fill*. Verified on device in both themes
+against the two new fixture rows and against B1 itself:
+
+| | Dark mode | Light mode |
+|---|---|---|
+| `A7` theme colour on **yellow** fill | dark text ✓ | dark text ✓ |
+| `A8` theme colour on **navy** fill | light text ✓ | light text ✓ |
+| `styles-basic` B1 ("Fill" on yellow) | dark text ✓ | dark text ✓ |
+| `A4` black on yellow, both chosen | untouched ✓ | untouched ✓ |
+| `A5` white on navy, both chosen | untouched ✓ | untouched ✓ |
+| `A6` deliberate grey | still dim ✓ | still dim ✓ |
+
 ### T29 — selection, verified in all four frozen regions
 
 The hit-test is the part that breaks, so it was checked where it breaks:

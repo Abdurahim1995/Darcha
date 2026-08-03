@@ -139,6 +139,28 @@ class StylesParserTest {
         assertEquals(Color(0xFF1F3864.toInt()), table[5]!!.fillColor)
     }
 
+    /**
+     * The combination the corpus only had by accident, in `styles-basic.xlsx`
+     * B1, until it shipped a regression in v1.1.0: **no font colour chosen, but
+     * a fill chosen.**
+     *
+     * The parser's job here is only to keep the two facts apart — `fontColor` is
+     * `null` while `fillColor` is not — so the renderer can see that the
+     * background is the author's and the foreground is its own. Both polarities
+     * are pinned, because getting one right by luck is exactly how this was
+     * missed the first time.
+     */
+    @Test
+    fun themeColourOnAFill_leavesTheFontUnchosenAndTheFillChosen() {
+        val table = parseFixture("text-contrast.xlsx")
+
+        assertNull("A7 chose no font colour", table[7]!!.fontColor)
+        assertEquals(Color(0xFFFFFF00.toInt()), table[7]!!.fillColor)
+
+        assertNull("A8 chose no font colour", table[8]!!.fontColor)
+        assertEquals(Color(0xFF1F3864.toInt()), table[8]!!.fillColor)
+    }
+
     @Test
     fun aQuietGreyIsStillAChoice() {
         val table = parseFixture("text-contrast.xlsx")

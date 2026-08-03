@@ -22,11 +22,14 @@ class TextLegibilityTest {
     private val darkThemeText = Color(0xFFE4E1E6)
     private val lightThemeText = Color(0xFF202020)
 
+    private val yellow = Color(0xFFFFFF00)
+    private val navy = Color(0xFF1F3864)
+
     private fun onDark(own: Color?, behind: Color = darkSurface, filled: Boolean = false) =
-        TextLegibility.resolve(own, darkThemeText, behind, filled)
+        TextLegibility.resolve(own, darkThemeText, lightThemeText, behind, filled)
 
     private fun onLight(own: Color?, behind: Color = lightSurface, filled: Boolean = false) =
-        TextLegibility.resolve(own, lightThemeText, behind, filled)
+        TextLegibility.resolve(own, lightThemeText, darkThemeText, behind, filled)
 
     // --- no choice: the theme supplies the colour ---
 
@@ -41,12 +44,52 @@ class TextLegibilityTest {
         assertEquals(lightThemeText, onLight(null))
     }
 
+    /**
+     * INVERTED after T28 shipped it wrong, and it is worth knowing why.
+     *
+     * The original test asserted that a cell with no font colour always gets the
+     * running theme's text colour, fill or no fill — and it passed, because the
+     * fill it was written against was navy, where light text happens to be
+     * right. Generalising from that one case put **light text on a yellow
+     * highlight in dark mode**, which is unreadable and was a regression against
+     * v1.0.0: that version resolved `theme="1"` to black and so got this right by
+     * accident.
+     *
+     * The rule now looks at what is actually behind the text. A cell can decline
+     * to choose a font colour while still choosing a fill — `<color theme="1"/>`
+     * on a yellow highlight is about as ordinary as a spreadsheet gets — and in
+     * that case the background is the author's, not ours.
+     */
     @Test
-    fun theDocumentChoseNothing_evenOnAFill_theThemeStillDecides() {
-        // A fill without a font colour is common (a highlighted row of plain
-        // text). There is no choice to honour, so the theme's text colour is
-        // still the right answer.
-        assertEquals(darkThemeText, onDark(null, behind = Color(0xFF1F3864), filled = true))
+    fun theDocumentChoseNothing_onAFill_theFillDecidesWhichThemeColour() {
+        // Dark theme, light fill: the running theme's light text would vanish.
+        assertEquals(lightThemeText, onDark(null, behind = yellow, filled = true))
+        // Dark theme, dark fill: the running theme's colour is already right.
+        assertEquals(darkThemeText, onDark(null, behind = navy, filled = true))
+
+        // ...and the mirror image in light mode.
+        assertEquals(darkThemeText, onLight(null, behind = navy, filled = true))
+        assertEquals(lightThemeText, onLight(null, behind = yellow, filled = true))
+    }
+
+    /**
+     * The exact cell that exposed the bug: `synthetic/styles-basic.xlsx` B1 is
+     * `fontId=0` — `<color theme="1"/>`, so no colour chosen — on a solid yellow
+     * fill. Named after the fixture so the connection is not lost.
+     */
+    @Test
+    fun stylesBasicB1_themeColourOnYellow_isReadableInBothThemes() {
+        assertEquals(lightThemeText, onDark(null, behind = yellow, filled = true))
+        assertEquals(lightThemeText, onLight(null, behind = yellow, filled = true))
+    }
+
+    @Test
+    fun anUnfilledCellIsUnaffectedByTheFillRule() {
+        // The no-choice branch now compares two candidates rather than returning
+        // one, so this is the guard that it still degenerates correctly where
+        // the background is ours.
+        assertEquals(darkThemeText, onDark(null))
+        assertEquals(lightThemeText, onLight(null))
     }
 
     // --- the two invisible cases, one per theme ---
@@ -73,9 +116,8 @@ class TextLegibilityTest {
         // Black on the author's yellow: they picked both colours, so the
         // contrast is theirs to own. Substituting here would put light text on a
         // light fill — worse than the problem it set out to fix.
-        val yellow = Color(0xFFFFFF00)
         assertEquals(Color.Black, onDark(Color.Black, behind = yellow, filled = true))
-        assertEquals(Color.White, onLight(Color.White, behind = Color(0xFF1F3864), filled = true))
+        assertEquals(Color.White, onLight(Color.White, behind = navy, filled = true))
     }
 
     @Test

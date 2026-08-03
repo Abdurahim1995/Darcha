@@ -325,6 +325,10 @@ def gen_text_contrast() -> None:
         A5  white on dark-blue fill    -> chose both, the other way round.
         A6  grey #999999, no fill      -> chose a quiet colour on purpose.
                                          Must NOT be "rescued" into full contrast.
+        A7  theme text on YELLOW fill  -> chose the background but not the text.
+                                         Needs DARK text in both app themes.
+        A8  theme text on NAVY fill    -> the same, the other polarity.
+                                         Needs LIGHT text in both app themes.
 
     A1 is what T28 changed in the parser (theme 1 -> null, "no choice"). A2/A3
     are what the renderer's contrast rule catches. A4/A5/A6 are the cases that
@@ -349,6 +353,23 @@ def gen_text_contrast() -> None:
     ws["A5"].fill = PatternFill(start_color="FF1F3864", end_color="FF1F3864", fill_type="solid")
     ws["A6"] = "quiet grey"
     ws["A6"].font = Font(color="FF999999")
+
+    # A7/A8 -- the combination the corpus only had by accident, in
+    # synthetic/styles-basic.xlsx B1, until it shipped a regression (v1.1.0).
+    #
+    # The document declines to choose a font colour (theme 1 = the system's text
+    # colour) but DOES choose a fill. So the background is the author's while the
+    # foreground is ours, and the readable colour depends entirely on the fill:
+    # dark text on the yellow, light text on the navy, in EITHER app theme. Both
+    # polarities are here because getting one right by luck is exactly how this
+    # was missed the first time.
+    ws["A7"] = "theme on light fill"
+    ws["A7"].font = Font(color=XlColor(theme=1, tint=0.0))
+    ws["A7"].fill = PatternFill(start_color="FFFFFF00", end_color="FFFFFF00", fill_type="solid")
+    ws["A8"] = "theme on dark fill"
+    ws["A8"].font = Font(color=XlColor(theme=1, tint=0.0))
+    ws["A8"].fill = PatternFill(start_color="FF1F3864", end_color="FF1F3864", fill_type="solid")
+
     ws.column_dimensions["A"].width = 22
     _save(wb, "text-contrast.xlsx")
 

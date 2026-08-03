@@ -153,10 +153,22 @@ read out of the committed `xl/styles.xml`, not typed.
 | `A4` | 4 | `rgb="FF000000"` | `BLACK` | `FFFFFF00` | The document chose **both**. Must render as written whatever the ratio. |
 | `A5` | 5 | `rgb="FFFFFFFF"` | `WHITE` | `FF1F3864` | The same, the other way round. |
 | `A6` | 6 | `rgb="FF999999"` | `999999` | none | Quiet on purpose (2.8:1 on light). Must **not** be "rescued" — that would rewrite the document rather than rescue it. |
+| `A7` | 7 | `<color theme="1"/>` | **`null`** | `FFFFFF00` | Chose the **background but not the text**. Needs a *dark* colour in **both** app themes — the fill is the author's, so the running theme's text colour may be the wrong one. |
+| `A8` | 8 | `<color theme="1"/>` | **`null`** | `FF1F3864` | The same, opposite polarity: needs a *light* colour in both themes. |
 
 `A1` is what the parser change is about; `A2`/`A3` are what the renderer's
 contrast rule catches; `A4`–`A6` exist to prove neither mechanism overreaches.
 Two rows would have demonstrated the fix; it takes six to show it is bounded.
+
+**`A7`/`A8` were added after v1.1.0 shipped a regression**, and they are the rows
+worth understanding. The corpus had this combination only by accident — in
+`styles-basic.xlsx` B1 — and nothing asserted it, so T28 generalised from a
+single navy fill and put light text on a yellow highlight in dark mode. Both
+polarities are pinned now, because getting one right by luck is exactly how it
+was missed. The rule is: when the document chose no font colour but *did* choose
+a fill, the background is the author's while the foreground is ours, so the text
+colour is picked for contrast against **that fill** rather than against the app
+theme's own surface.
 
 Note `A1` and the sheet default share `<color theme="1"/>` — openpyxl writes two
 identical fonts (0 and 1) — so `table[0]` and `table[1]` both resolve to `null`.

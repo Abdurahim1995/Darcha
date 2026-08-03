@@ -55,20 +55,45 @@ internal object TextLegibility {
      *
      * @param own what the document chose, or `null` if it chose nothing.
      * @param fallback the theme's own text colour.
+     * @param fallbackInverse the *other* theme's text colour — dark when running
+     *   dark, light when running light. Used only when the document chose no
+     *   colour and the background it left behind is the wrong one for
+     *   [fallback]; see below.
      * @param behind what the text will actually sit on — the cell's fill if it
      *   has one, otherwise the app's surface.
-     * @param documentOwnsBackground `true` when the cell has a fill. Then the
-     *   document picked *both* colours and we render its pairing faithfully,
-     *   however low the contrast: black on the author's yellow stays black, and
-     *   white on the author's navy stays white.
+     * @param documentOwnsBackground `true` when the cell has a fill **and** the
+     *   document also chose the font colour. Then it picked *both* and we render
+     *   its pairing faithfully, however low the contrast: black on the author's
+     *   yellow stays black, and white on the author's navy stays white.
      */
     fun resolve(
         own: Color?,
         fallback: Color,
+        fallbackInverse: Color,
         behind: Color,
         documentOwnsBackground: Boolean,
     ): Color {
-        if (own == null) return fallback
+        // Nothing chosen. The theme supplies the colour — but which one depends
+        // on what is *actually* behind the text.
+        //
+        // This is the case a first pass gets wrong, and this codebase did: a
+        // cell can decline to pick a font colour while still picking a fill, and
+        // `<color theme="1"/>` on a yellow highlight is about as ordinary as a
+        // spreadsheet gets. Returning the running theme's text colour without
+        // looking at the fill puts light text on that yellow in dark mode —
+        // unreadable, and a regression against a version that resolved theme 1
+        // to black and so got it right by accident.
+        //
+        // Picking the better-contrasting of the theme's two text colours handles
+        // both directions and degenerates correctly on an unfilled cell, where
+        // `behind` is our own surface and `fallback` wins by construction.
+        if (own == null) {
+            return if (contrastRatio(fallback, behind) >= contrastRatio(fallbackInverse, behind)) {
+                fallback
+            } else {
+                fallbackInverse
+            }
+        }
         if (documentOwnsBackground) return own
         return if (contrastRatio(own, behind) >= MIN_CONTRAST) own else fallback
     }

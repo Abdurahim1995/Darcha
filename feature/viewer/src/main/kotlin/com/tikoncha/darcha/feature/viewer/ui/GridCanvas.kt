@@ -756,6 +756,7 @@ private fun cellTextColor(style: CellStyle, colors: GridColors, surface: Color):
     return TextLegibility.resolve(
         own = style.fontColor?.toCompose(),
         fallback = colors.cellText,
+        fallbackInverse = colors.cellTextInverse,
         behind = fill ?: surface,
         documentOwnsBackground = fill != null,
     )
