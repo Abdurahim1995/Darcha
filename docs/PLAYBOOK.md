@@ -118,7 +118,7 @@ Prerequisites in repo: `CLAUDE.md` (root), `docs/TECH_SPEC.md`, this file.
 > The `check_fixtures.py` divergences are now **accepted rather than left red**, each with its reason printed on every run: a checker that stays red trains people to skim past it, and then the next real divergence goes unnoticed. `docs/FIXTURE_RECIPES.md` was corrected to match what the files actually contain — including an instruction to type the comma decimals deliberately, since that cell turned out to be the most useful one in the corpus.
 
 **M6 — v1.2**
-- [x] T31 Scroll to cell · [x] T32 Search engine · [ ] T33 Search UI · [ ] T34 Range selection + copy
+- [x] T31 Scroll to cell · [x] T32 Search engine · [x] T33 Search UI · [ ] T34 Range selection + copy
 
 > **T31 — DONE.** `PaneRegions.scrollToShow` plus a 1-D solver, `solveAxisScroll`. Pure geometry, no Compose, and **not wired to anything** — T33 owns that.
 >
@@ -143,6 +143,16 @@ Prerequisites in repo: `CLAUDE.md` (root), `docs/TECH_SPEC.md`, this file.
 > **Progressive parsing: results are pinned to one immutable snapshot, and staleness is decided by identity.** A new chunk means a new `SheetData`, so `isFor()` says the results are *stale* rather than merely incomplete and the caller re-runs. That makes a match index pointing into a changed sheet impossible rather than unlikely. `complete` records whether the sheet had finished parsing, so a count is never presented as final when it is not.
 >
 > Matches are one `LongArray` — row, column and matched-field packed into each `Long`, so ascending order *is* row-major and the per-frame "is this cell a match?" lookup is an allocation-free binary search. The array is **sorted here** rather than assumed sorted: a class that promises row-major order should not depend on a caller keeping a promise on its behalf, and a test that builds a row with unsorted columns caught exactly that. Cross-sheet search deferred and stated. Tests 407 → 428.
+>
+> **T33 — DONE.** Search bar, count, next/previous with wrapping, two-level highlight, T31 for the viewport. Search is a *request* the reducer cannot answer, so it comes back as a `SearchEvent` — the same split as a fling or a parse.
+>
+> **The stale-snapshot signal is wired as a rule, not a check.** The reducer drops any result set that is not `isFor` the sheet on screen — on a new chunk, on the final load, on a sheet switch — so **the state can never hold matches for a different sheet** and nothing downstream has to remember to look. The ViewModel then re-runs quietly. Refusing to search until the parse finished would mean 2.4 seconds of a dead box on `big-50k`; instead the count is marked provisional (`1 of 12+`) while `complete` is false, which is honest because the progress bar is up anyway.
+>
+> **Interaction decided and stated.** Stepping to a match **selects** it, so the T29 selection bar shows its value and Copy does the obvious thing. A manual tap moves the selection and **keeps** the search — clearing matches because the reader glanced at a neighbour would be hostile. Scrolling away keeps the highlight, since it is state rather than a function of the viewport. A touch during a fling still stops the fling (T29).
+>
+> **The two-level highlight survives the document's own fills, verified rather than assumed.** Each level carries two candidates and `TextLegibility.betterOn` picks per cell — T28's measurement reused, not re-derived. On device: on the dark surface the current match is amber + a bright yellow outline; on the light surface, slate + orange; **on `styles-basic`'s yellow fill the outline swaps to orange in both themes**, because the yellow one would have vanished into it. Unmatched cells untouched, and the red text stays red.
+>
+> Checked on the A31 in **both themes and both locales**: `big-50k` (`zeta`, 8,333 matches), a jump to row 49,998 landing with margin via T31, the empty state with next/previous disabled, and a manual tap keeping the matches. Zero crashes. `docs/PERF.md` has the table. Tests 428 → 439.
 
 ---
 

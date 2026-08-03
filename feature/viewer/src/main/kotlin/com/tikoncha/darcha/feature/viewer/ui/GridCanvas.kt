@@ -8,8 +8,13 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -36,10 +41,12 @@ import com.tikoncha.darcha.feature.viewer.geometry.Pane
 import com.tikoncha.darcha.feature.viewer.geometry.PaneRegion
 import com.tikoncha.darcha.feature.viewer.geometry.PaneRegions
 import com.tikoncha.darcha.feature.viewer.geometry.cellAt
+import com.tikoncha.darcha.feature.viewer.geometry.scrollToShow
 import com.tikoncha.darcha.feature.viewer.data.SheetSnapshot
 import com.tikoncha.darcha.feature.viewer.mvi.CellRef
 import com.tikoncha.darcha.feature.viewer.mvi.ScrollBounds
 import com.tikoncha.darcha.feature.viewer.mvi.Viewport
+import com.tikoncha.darcha.feature.viewer.search.SearchResults
 import com.tikoncha.darcha.model.CellStyle
 import com.tikoncha.darcha.model.DEFAULT_MAX_DIGIT_WIDTH
 import com.tikoncha.darcha.model.FormattedValueCache
@@ -76,6 +83,9 @@ public fun GridCanvas(
     modifier: Modifier = Modifier,
     onDrawnCells: (Int) -> Unit = {},
     selection: () -> CellRef? = { null },
+    matches: () -> SearchResults? = { null },
+    currentMatch: CellRef? = null,
+    onReveal: (Viewport) -> Unit = {},
     onSelect: (CellRef?) -> Unit = {},
     onStopMotion: () -> Boolean = { false },
 ) {
@@ -132,6 +142,10 @@ public fun GridCanvas(
         )
     }
 
+    // The canvas size, captured so the reveal effect below can solve against the
+    // same rectangle the draw block uses.
+    var canvasSize by remember { mutableStateOf(IntSize.Zero) }
+
     val rowHeaderWidth = with(LocalDensity.current) { ROW_HEADER_WIDTH.toPx() }
     val columnHeaderHeight = with(LocalDensity.current) { COLUMN_HEADER_HEIGHT.toPx() }
 
@@ -148,6 +162,32 @@ public fun GridCanvas(
                 minScrollY = panes.minScrollY,
             ),
         )
+    }
+
+    // Bring the current match into view, using T31 rather than reimplementing
+    // it. The hard part -- not parking the cell under a frozen strip -- lives
+    // there; this only decides *when*. A match already comfortably on screen
+    // gets the same viewport back, so stepping through matches inside one
+    // screenful does not scroll at all.
+    LaunchedEffect(currentMatch, canvasSize, geometry, panes) {
+        val target = currentMatch ?: return@LaunchedEffect
+        if (canvasSize.width == 0 || canvasSize.height == 0) return@LaunchedEffect
+        val range = merges.rangeOf(target.row, target.col)
+        val next = panes.scrollToShow(
+            target = range,
+            viewport = viewport(),
+            bounds = ScrollBounds(
+                maxScrollX = geometry.columnOffset(used.lastColumn),
+                maxScrollY = geometry.rowOffset(used.lastRow),
+                minScrollX = panes.minScrollX,
+                minScrollY = panes.minScrollY,
+            ),
+            originX = rowHeaderWidth,
+            originY = columnHeaderHeight,
+            width = canvasSize.width.toFloat(),
+            height = canvasSize.height.toFloat(),
+        )
+        if (next != viewport()) onReveal(next)
     }
 
     // One gesture loop rather than stacked detectors, because a pinch and a drag
@@ -249,7 +289,7 @@ public fun GridCanvas(
         )
     }
 
-    Canvas(modifier = modifier.then(taps).then(gestures)) {
+    Canvas(modifier = modifier.onSizeChanged { canvasSize = it }.then(taps).then(gestures)) {
         // Read inside the draw block: a viewport change then invalidates only the
         // draw phase, never recomposing the surrounding chrome.
         val current = viewport()
@@ -262,6 +302,8 @@ public fun GridCanvas(
         )
 
         val selected = selection()
+        val found = matches()
+        val currentCell = currentMatch
 
         for (region in regions) {
             if (!region.isVisible) continue
@@ -277,6 +319,11 @@ public fun GridCanvas(
                 textMeasurer = textMeasurer,
                 cache = textCache,
             )
+            // Matches under the selection outline, so a cell that is both still
+            // shows its selection clearly.
+            if (found != null && !found.isEmpty) {
+                drawMatches(found, currentCell, region, geometry, sheet, surface, colors)
+            }
             if (selected != null) {
                 drawSelection(selected, region, geometry, merges, colors)
             }
@@ -690,6 +737,69 @@ private const val CELL_PADDING = 4f
 private const val HEADER_ZOOM = 1f
 private const val GRID_STROKE = 1f
 private const val FREEZE_STROKE = 2f
+
+/**
+ * Tint the search matches inside one region, and outline the current one (T33).
+ *
+ * **Two levels, both measured against what is behind them.** A highlight sits on
+ * top of whatever fill the document chose, and T28 proved that a single fixed
+ * colour cannot survive that: the one that reads on a white sheet disappears on
+ * the author's yellow. So each level carries two candidates and
+ * [TextLegibility.betterOn] picks per cell — the same measurement that decides
+ * text colour, for the same reason.
+ *
+ * **Hot path.** Only the region's own visible rows are walked, and each row's
+ * cells are checked with a binary search over the packed match array — no
+ * allocation, nothing per frame. Regions that hold no matches cost one
+ * comparison per visible cell and no draw calls.
+ */
+private fun DrawScope.drawMatches(
+    matches: SearchResults,
+    current: CellRef?,
+    region: PaneRegion,
+    geometry: GridGeometry,
+    sheet: SheetSnapshot,
+    surface: Color,
+    colors: GridColors,
+) {
+    clipRect(left = region.left, top = region.top, right = region.right, bottom = region.bottom) {
+        for (row in region.firstRow..region.lastRow) {
+            val cells = sheet.data.row(row) ?: continue
+            for (i in cells.columns.indices) {
+                val column = cells.columns[i]
+                if (column < region.firstColumn || column > region.lastColumn) continue
+                if (matches.indexOf(row, column) < 0) continue
+
+                val left = region.originX + geometry.screenXOf(column, region.viewport)
+                val top = region.originY + geometry.screenYOf(row, region.viewport)
+                val width = geometry.screenWidthOf(column, region.viewport)
+                val height = geometry.screenHeightOf(row, region.viewport)
+
+                // What the highlight will actually sit on: the document's fill
+                // if it chose one, otherwise our surface.
+                val behind = sheet.styles[cells.styleIds[i]]?.fillColor?.toCompose() ?: surface
+                val isCurrent = current != null && current.row == row && current.col == column
+
+                drawRect(
+                    color = TextLegibility.betterOn(behind, colors.matchWash, colors.matchWashAlt),
+                    topLeft = Offset(left, top),
+                    size = Size(width, height),
+                )
+                if (isCurrent) {
+                    drawRect(
+                        color = TextLegibility.betterOn(behind, colors.currentMatch, colors.currentMatchAlt),
+                        topLeft = Offset(left, top),
+                        size = Size(width, height),
+                        style = Stroke(width = CURRENT_MATCH_STROKE),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Current-match outline width, heavier than a gridline and than the wash edge. */
+private const val CURRENT_MATCH_STROKE = 5f
 
 /**
  * Outline the selected cell inside one region, if it falls there (T29).

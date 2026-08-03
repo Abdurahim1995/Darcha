@@ -15,7 +15,7 @@ import com.tikoncha.darcha.model.SheetData
  * [DISPLAYED]. The distinction exists for the case that motivated it: a date
  * cell displaying `01-15-24` over a stored serial of `45306`.
  */
-internal enum class MatchField {
+public enum class MatchField {
     /** Found in what the cell shows on screen. */
     DISPLAYED,
 
@@ -70,31 +70,31 @@ internal enum class MatchField {
  *   `false` means "these are all the matches *so far*" — the count must not be
  *   presented as final.
  */
-internal class SearchResults(
-    val query: String,
-    val complete: Boolean,
+public class SearchResults(
+    public val query: String,
+    public val complete: Boolean,
     private val cells: LongArray,
     private val scanned: SheetData,
 ) {
     /** Number of matching cells. A cell matches at most once. */
-    val size: Int get() = cells.size
+    public val size: Int get() = cells.size
 
-    val isEmpty: Boolean get() = cells.isEmpty()
+    public val isEmpty: Boolean get() = cells.isEmpty()
 
     /** 0-based row of the match at [index]. */
-    fun rowAt(index: Int): Int = (cells[index] ushr ROW_SHIFT).toInt()
+    public fun rowAt(index: Int): Int = (cells[index] ushr ROW_SHIFT).toInt()
 
     /** 0-based column of the match at [index]. */
-    fun colAt(index: Int): Int = ((cells[index] ushr FIELD_BITS) and COL_MASK).toInt()
+    public fun colAt(index: Int): Int = ((cells[index] ushr FIELD_BITS) and COL_MASK).toInt()
 
     /** Which reading matched at [index]. */
-    fun fieldAt(index: Int): MatchField = MatchField.entries[(cells[index] and FIELD_MASK).toInt()]
+    public fun fieldAt(index: Int): MatchField = MatchField.entries[(cells[index] and FIELD_MASK).toInt()]
 
     /**
      * Index of the match at ([row], [col]), or `-1`. Binary search over the
      * packed array — allocation-free, so the renderer may call it per cell.
      */
-    fun indexOf(row: Int, col: Int): Int {
+    public fun indexOf(row: Int, col: Int): Int {
         // Compared with the field bits shifted away, so a cell is found whatever
         // reading it matched on.
         val key = cellKey(row, col)
@@ -119,9 +119,9 @@ internal class SearchResults(
      * different scans, and comparing 350,000 cells to find that out would cost
      * more than re-running the search.
      */
-    fun isFor(sheet: SheetSnapshot): Boolean = sheet.data === scanned
+    public fun isFor(sheet: SheetSnapshot): Boolean = sheet.data === scanned
 
-    companion object {
+    public companion object {
         private const val FIELD_BITS = 2
         private const val FIELD_MASK = 0b11L
         private const val ROW_SHIFT = 34
@@ -136,7 +136,7 @@ internal class SearchResults(
                 ((col.toLong() and COL_MASK) shl FIELD_BITS) or
                 field.ordinal.toLong()
 
-        fun empty(query: String, sheet: SheetSnapshot, complete: Boolean): SearchResults =
+        public fun empty(query: String, sheet: SheetSnapshot, complete: Boolean): SearchResults =
             SearchResults(query, complete, LongArray(0), sheet.data)
     }
 }
@@ -191,12 +191,12 @@ internal class SearchResults(
  *   returning one invites a caller to display it. Someone typing `January`
  *   issues seven searches and six of them are dead before they finish.
  */
-internal object SheetSearch {
+public object SheetSearch {
 
     /** How often the cancellation flag is polled, in cells. */
-    const val CANCEL_CHECK_INTERVAL: Int = 1024
+    public const val CANCEL_CHECK_INTERVAL: Int = 1024
 
-    fun run(
+    public fun run(
         sheet: SheetSnapshot,
         query: String,
         names: DateNames = DateNames.ENGLISH,

@@ -1,9 +1,12 @@
 package com.tikoncha.darcha.feature.viewer.mvi
 
 import com.tikoncha.darcha.feature.viewer.data.SheetSnapshot
+import com.tikoncha.darcha.feature.viewer.search.SheetSearch
 import com.tikoncha.darcha.feature.viewer.data.WorkbookSource
 import com.tikoncha.darcha.model.ErrorKind
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
@@ -430,6 +433,166 @@ class ViewerReducerTest {
         state = reduce(state, ViewerIntent.Scroll(dx = 40f, dy = 40f))
         state = reduce(state, ViewerIntent.Zoom(scale = 1.5f, focalX = 100f, focalY = 100f))
         assertEquals(CellRef(row = 7, col = 1), (state as ViewerState.Ready).selection)
+    }
+
+    // --- search (T33) ---
+    //
+    // The rule these exist for: the reducer must never hold results that do not
+    // belong to the sheet on screen. An index into a stale match list is how
+    // next/previous ends up scrolling to a cell that moved.
+
+    private fun searching(query: String, sheetData: SheetSnapshot = SheetSnapshot.EMPTY): ViewerState.Ready {
+        var s: ViewerState = reduce(ready().copy(sheet = sheetData), ViewerIntent.SetSearchOpen(true))
+        s = reduce(s, ViewerIntent.SetSearchQuery(query))
+        return s as ViewerState.Ready
+    }
+
+    private fun resultsFor(sheet: SheetSnapshot, query: String, vararg cells: Pair<Int, Int>) =
+        SheetSearch.run(sheet, query)!!
+
+    @Test
+    fun openingSearch_givesAnEmptyBar_andClosingDropsEverything() {
+        val opened = reduce(ready(), ViewerIntent.SetSearchOpen(true)) as ViewerState.Ready
+        assertEquals(SearchState(), opened.search)
+
+        val closed = reduce(opened, ViewerIntent.SetSearchOpen(false)) as ViewerState.Ready
+        assertNull("closing must not leave a match list to be reopened", closed.search)
+    }
+
+    @Test
+    fun typingAQuery_marksItRunningAndClearsAnyOldMatches() {
+        val s = searching("Toshkent")
+        assertEquals("Toshkent", s.search!!.query)
+        assertNull(s.search!!.results)
+        assertTrue(s.search!!.running)
+        assertEquals(-1, s.search!!.currentIndex)
+    }
+
+    @Test
+    fun clearingTheBox_stopsSearchingRatherThanLeavingTheLastMatchesLit() {
+        var s: ViewerState = searching("Toshkent")
+        s = reduce(s, ViewerIntent.SetSearchQuery(""))
+        val search = (s as ViewerState.Ready).search!!
+        assertFalse(search.running)
+        assertNull(search.results)
+    }
+
+    /**
+     * A scan that finishes after the sheet has moved on must be **dropped**, not
+     * shown. This is the single rule that makes a stale index impossible.
+     */
+    @Test
+    fun resultsForADifferentSheet_areRejected() {
+        val other = SheetSnapshot.EMPTY.copy(data = com.tikoncha.darcha.model.SheetData(emptyMap()))
+        val state = searching("x")
+        val stale = SheetSearch.run(other, "x")!!
+
+        val after = reduce(state, SearchEvent.Completed(stale)) as ViewerState.Ready
+        assertNull("a scan of another sheet must not become the state", after.search!!.results)
+    }
+
+    @Test
+    fun resultsForASupersededQuery_areRejected() {
+        val state = searching("second")
+        val old = SheetSearch.run(state.sheet, "first")!!
+
+        val after = reduce(state, SearchEvent.Completed(old)) as ViewerState.Ready
+        assertNull(after.search!!.results)
+        assertEquals("second", after.search!!.query)
+    }
+
+    @Test
+    fun aNewChunkInvalidatesTheMatches_soTheyCannotBeNavigated() {
+        val state = searching("x")
+        val results = SheetSearch.run(state.sheet, "x")!!
+        var s: ViewerState = reduce(state, SearchEvent.Completed(results))
+        assertNotNull((s as ViewerState.Ready).search!!.results)
+
+        // The next chunk: a different SheetData, so the matches are stale.
+        val grown = SheetSnapshot.EMPTY.copy(data = com.tikoncha.darcha.model.SheetData(emptyMap()))
+        s = reduce(s, ParseEvent.PartialLoaded(meta, grown, 0.5f))
+
+        val search = (s as ViewerState.Ready).search!!
+        assertNull("stale matches must be dropped, not carried", search.results)
+        assertEquals(-1, search.currentIndex)
+        assertTrue("and the UI must say it is working, not that there are none", search.running)
+    }
+
+    @Test
+    fun switchingSheet_dropsTheMatchesButKeepsTheQuery() {
+        val state = searching("x")
+        var s: ViewerState = reduce(state, SearchEvent.Completed(SheetSearch.run(state.sheet, "x")!!))
+        val other = SheetSnapshot.EMPTY.copy(data = com.tikoncha.darcha.model.SheetData(emptyMap()))
+        s = reduce(s, ParseEvent.SheetLoaded(1, meta, other))
+
+        val search = (s as ViewerState.Ready).search!!
+        assertEquals("the reader is still looking for the same thing", "x", search.query)
+        assertNull(search.results)
+    }
+
+    @Test
+    fun steppingWrapsAtBothEnds_andSelectsTheMatch() {
+        val sheet = sheetWith("hit", cells = listOf(0 to 0, 2 to 1, 5 to 3))
+        var s: ViewerState = searching("hit", sheet)
+        s = reduce(s, SearchEvent.Completed(SheetSearch.run(sheet, "hit")!!))
+
+        assertEquals(0, (s as ViewerState.Ready).search!!.currentIndex)
+
+        s = reduce(s, ViewerIntent.StepMatch(forward = true))
+        assertEquals(1, (s as ViewerState.Ready).search!!.currentIndex)
+        assertEquals("the found cell becomes the selection (T29)", CellRef(2, 1), s.selection)
+
+        s = reduce(s, ViewerIntent.StepMatch(forward = true))
+        s = reduce(s, ViewerIntent.StepMatch(forward = true))
+        assertEquals("wraps past the last", 0, (s as ViewerState.Ready).search!!.currentIndex)
+
+        s = reduce(s, ViewerIntent.StepMatch(forward = false))
+        assertEquals("wraps before the first", 2, (s as ViewerState.Ready).search!!.currentIndex)
+    }
+
+    @Test
+    fun steppingWithNoMatches_doesNothing() {
+        val s = searching("nothing")
+        assertSame(s, reduce(s, ViewerIntent.StepMatch(forward = true)))
+    }
+
+    @Test
+    fun aManualTapMovesTheSelection_butKeepsTheSearch() {
+        val sheet = sheetWith("hit", cells = listOf(0 to 0, 4 to 2))
+        var s: ViewerState = searching("hit", sheet)
+        s = reduce(s, SearchEvent.Completed(SheetSearch.run(sheet, "hit")!!))
+        s = reduce(s, ViewerIntent.SelectCell(CellRef(9, 9)))
+
+        val ready = s as ViewerState.Ready
+        assertEquals(CellRef(9, 9), ready.selection)
+        assertEquals("tapping elsewhere must not throw away the matches", 2, ready.search!!.matchCount)
+        assertEquals(0, ready.search!!.currentIndex)
+    }
+
+    @Test
+    fun theCountIsNotFinalWhileAScanRunsOrTheSheetGrows() {
+        val sheet = sheetWith("hit", cells = listOf(0 to 0))
+        var s: ViewerState = searching("hit", sheet)
+        assertFalse("a scan in flight", (s as ViewerState.Ready).search!!.countIsFinal)
+
+        s = reduce(s, SearchEvent.Completed(SheetSearch.run(sheet, "hit", complete = false)!!))
+        assertFalse("the sheet is still parsing", (s as ViewerState.Ready).search!!.countIsFinal)
+
+        s = reduce(s, SearchEvent.Completed(SheetSearch.run(sheet, "hit", complete = true)!!))
+        assertTrue((s as ViewerState.Ready).search!!.countIsFinal)
+    }
+
+    /** A sheet with the word "hit" at each of the given (row, col) positions. */
+    private fun sheetWith(word: String, cells: List<Pair<Int, Int>>): SheetSnapshot {
+        val rows = cells.groupBy { it.first }.mapValues { (_, cs) ->
+            val sorted = cs.map { it.second }.sorted()
+            com.tikoncha.darcha.model.Row(
+                columns = sorted.toIntArray(),
+                values = Array(sorted.size) { com.tikoncha.darcha.model.CellValue.InlineText(word) },
+                styleIds = IntArray(sorted.size),
+            )
+        }
+        return SheetSnapshot.EMPTY.copy(data = com.tikoncha.darcha.model.SheetData(rows))
     }
 
     // --- full sequence ---

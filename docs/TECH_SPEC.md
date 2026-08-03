@@ -155,6 +155,48 @@ Every boundary is derived from **one number per axis**: the frozen extent, `span
 Scrolling gains a **floor**: the scrolling region starts at the first unfrozen column, and letting scroll fall below that would draw the frozen columns a second time inside the body. The floor is clamped in two places on purpose — in the reducer via `ScrollBounds`, and again inside the region maths, because the renderer publishes the bounds *after* the first composition and the first frame would otherwise be drawn unclamped.
 - **Merged cells:** drawn once at the anchor cell spanning the merged bounds; covered cells are skipped.
 
+### Search (T32/T33)
+
+**Active sheet only.** Other sheets are read on demand (§7), so searching them
+would turn a search into a parse of the whole workbook. Cross-sheet search is
+deferred, not forgotten.
+
+**Both readings of a cell, one hit each.** The displayed string and the raw
+value — someone typing `Toshkent` is reading the screen, someone typing `45306`
+knows the serial under a date. The code makes that nearly free: only a number
+has two readings, since text renders as itself and a boolean as `TRUE`/`FALSE`.
+Case-insensitive substring, because a viewer's reader is looking for something
+half-remembered.
+
+**The scan never touches the renderer's `FormattedValueCache`.** It holds 2,048
+strings sized for a viewport; scanning 350,000 cells through it would evict
+everything the grid needs and make scrolling stutter. The scan builds its own and
+drops it; text cells skip the formatter entirely.
+
+**Results are pinned to one immutable snapshot.** A chunk arriving means a new
+`SheetData`, so the reducer drops the old matches rather than carrying them — an
+index into a stale list is how next/previous ends up at a cell that moved. The
+state can therefore never hold results for a sheet other than the one on screen,
+and nothing downstream has to remember to check. While the sheet is still growing
+the count is shown as **provisional**, because it is.
+
+**Interaction, decided rather than left to emerge:**
+
+- Stepping to a match **selects** it, so the selection bar shows its value and
+  the Copy button does the obvious thing.
+- A manual tap moves the selection and **keeps** the search. Clearing matches
+  because the reader glanced at a neighbouring cell would be hostile.
+- Scrolling away keeps the highlight; it is state, not a function of the
+  viewport. Stepping brings it back via T31.
+- A touch during a fling still stops the fling rather than selecting (T29).
+
+**Two levels of highlight, both measured against what is behind them.** A
+highlight sits on whatever fill the document chose, and §9's text rule already
+proved a single fixed colour cannot survive that. Each level carries two
+candidates and the drawing code picks per cell with the same contrast
+measurement — an outline that would vanish into the author's yellow is swapped
+for its opposite.
+
 ### Scrolling a cell into view (T31)
 
 Bringing a target cell on screen is the prerequisite for search, and it has one

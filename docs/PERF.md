@@ -103,6 +103,45 @@ in the system file picker**. Both the list and the search results ignore
 quirk on this A31, not an app behaviour — the same taps drive Darcha's own UI
 fine.
 
+### Search UI on device — both themes, both locales (T33)
+
+The first M6 task a reader actually sees, so it was checked as one: `big-50k`
+(50,001 rows) and `styles-basic` on the A31, in Uzbek and English, dark and
+light.
+
+**The two-level highlight, and the fill it has to survive.** T28 proved a fixed
+colour cannot sit on a background the document chose, so each level carries two
+candidates and `TextLegibility.betterOn` picks per cell — the same measurement,
+reused rather than re-derived. What that produced, verified by eye at
+magnification:
+
+| Cell | Dark theme | Light theme |
+|---|---|---|
+| Other match, no fill | amber wash | slate wash |
+| **Current match**, no fill | amber wash + **bright yellow** outline | slate wash + **orange** outline |
+| **Current match on the author's yellow fill** | olive wash + **orange** outline | olive wash + **orange** outline |
+
+The yellow-filled cell is the case that matters: a yellow outline would have
+disappeared into it, and the rule swapped to the dark candidate on its own. Cell
+text stayed readable through every wash, and unmatched cells were untouched —
+`styles-basic`'s red text is still red.
+
+| Also checked | Result |
+|---|---|
+| Search on `big-50k`, query `zeta` | 8,333 matches, counted and highlighted; UI stayed responsive |
+| Jump to a far match (`49997`, row 49,998 of 50,001) | T31 scrolled straight to it, entering from the bottom edge **with margin** — the next row is visible below it |
+| Empty state | "Topilmadi" / "No matches", with previous and next **disabled** |
+| A manual tap while searching | selects the tapped cell (`D49977`) and **keeps** the matches, the count and the current match |
+| Uzbek | `Varaqdan topish` · `2 dan 1` · `Oldingi` / `Keyingi` / `Yopish` |
+| English | `Find in sheet` · `1 of 3` · `Previous` / `Next` / `Close` |
+| FATAL exceptions | **0** |
+
+**The provisional count.** While the sheet is still parsing or a scan is in
+flight the number is not presented as final: `countIsFinal` is false and the bar
+reads `1 of 12+` rather than `1 of 12`. Each chunk supersedes the scan the last
+one started, so during a long parse the bar honestly reads "searching" and the
+answer lands once the sheet stops moving.
+
 ### Search over big-50k, and the cache it does not touch (T32)
 
 Measured on the JVM against the real `big-50k-rows.xlsx` — **350,007 cells across

@@ -23,6 +23,12 @@ import androidx.compose.ui.graphics.Color
  *   case: a cell that chose no font colour but did choose a fill. There the
  *   background is the author's, not ours, so the readable colour may be the one
  *   the running theme is not using — see [TextLegibility.resolve].
+ * @property matchWash / [matchWashAlt] the two candidate tints for an ordinary
+ *   search match, and [currentMatch] / [currentMatchAlt] the two for the current
+ *   one (T33). Two of each because the cell underneath may be any colour the
+ *   document chose: the drawing code picks whichever reads on that background,
+ *   the same measurement T28 uses for text. One fixed highlight would vanish on
+ *   the fills it happened to resemble.
  * @property selection the selected cell's outline (T29). Drawn over the
  *   document's own colours, so it has to read against any fill an author might
  *   have used — hence the app's accent rather than anything derived from the
@@ -37,6 +43,10 @@ internal data class GridColors(
     val headerFill: Color,
     val headerText: Color,
     val selection: Color,
+    val matchWash: Color,
+    val matchWashAlt: Color,
+    val currentMatch: Color,
+    val currentMatchAlt: Color,
 )
 
 private val LightGrid = GridColors(
@@ -47,6 +57,10 @@ private val LightGrid = GridColors(
     headerFill = Color(0xFFF2F2F2),
     headerText = Color(0xFF606060),
     selection = Color(0xFF6750A4),
+    matchWash = Color(0x59FFC107),
+    matchWashAlt = Color(0x59263238),
+    currentMatch = Color(0xFFE65100),
+    currentMatchAlt = Color(0xFFFFD54F),
 )
 
 private val DarkGrid = GridColors(
@@ -57,6 +71,10 @@ private val DarkGrid = GridColors(
     headerFill = Color(0xFF26232A),
     headerText = Color(0xFF9C97A4),
     selection = Color(0xFFD0BCFF),
+    matchWash = Color(0x59FFC107),
+    matchWashAlt = Color(0x59263238),
+    currentMatch = Color(0xFFFFD54F),
+    currentMatchAlt = Color(0xFFE65100),
 )
 
 internal val LocalGridColors = staticCompositionLocalOf { LightGrid }

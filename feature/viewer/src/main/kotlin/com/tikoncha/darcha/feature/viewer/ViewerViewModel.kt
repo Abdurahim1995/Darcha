@@ -12,6 +12,9 @@ import com.tikoncha.darcha.feature.viewer.mvi.DocumentMeta
 import com.tikoncha.darcha.feature.viewer.mvi.FlingDecay
 import com.tikoncha.darcha.feature.viewer.mvi.ParseEvent
 import com.tikoncha.darcha.feature.viewer.mvi.RenderEvent
+import com.tikoncha.darcha.feature.viewer.mvi.SearchEvent
+import com.tikoncha.darcha.feature.viewer.search.SheetSearch
+import com.tikoncha.darcha.model.DateNames
 import com.tikoncha.darcha.feature.viewer.mvi.ScrollBounds
 import com.tikoncha.darcha.feature.viewer.mvi.ViewerEvent
 import com.tikoncha.darcha.feature.viewer.mvi.ViewerIntent
@@ -28,7 +31,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 
 /**
@@ -100,6 +105,12 @@ public class ViewerViewModel(
     /** The on-demand sheet read in flight, if any. */
     private var sheetJob: Job? = null
 
+    /** The scan in flight, if any. A new query or a new snapshot cancels it. */
+    private var searchJob: Job? = null
+
+    /** Month and weekday names for the current locale, injected by `:app` (T24). */
+    private var searchNames: DateNames = DateNames.ENGLISH
+
     /**
      * Recently viewed sheets, newest last (`accessOrder = true`).
      *
@@ -132,6 +143,16 @@ public class ViewerViewModel(
             }
 
             is ViewerIntent.SwitchSheet -> switchSheet(intent.id)
+
+            is ViewerIntent.SetSearchOpen -> {
+                if (!intent.open) searchJob?.cancel()
+                apply(intent)
+            }
+
+            is ViewerIntent.SetSearchQuery -> {
+                apply(intent)
+                startSearch(intent.query)
+            }
 
             is ViewerIntent.Fling -> startFling(intent.vx, intent.vy)
 
@@ -173,6 +194,67 @@ public class ViewerViewModel(
         flingJob?.cancel()
         zoomJob?.cancel()
         return stopped
+    }
+
+    /**
+     * Supply the month and weekday names searches format dates with (T24/T32).
+     *
+     * Locale lives in the UI layer, not in the model, so `:app` hands it down —
+     * the same injection point the renderer uses. A search started before this is
+     * set falls back to English rather than failing.
+     */
+    public fun setDateNames(names: DateNames) {
+        if (names == searchNames) return
+        searchNames = names
+        // A query already on screen was matched with the old names; re-run so a
+        // date search agrees with what the grid is showing.
+        (state.value as? ViewerState.Ready)?.search?.query?.takeIf { it.isNotEmpty() }
+            ?.let(::startSearch)
+    }
+
+    /**
+     * Scan the active sheet, off the main thread and cancellably (T32/T33).
+     *
+     * Cancellation is the point. Someone typing `January` issues seven searches
+     * and six are dead before they finish, so each new query cancels the last and
+     * the engine polls `isActive` every 1,024 cells. A cancelled scan returns
+     * `null` and dispatches nothing — a superseded result must never reach the
+     * state, or the count would flicker through every prefix of the query.
+     */
+    private fun startSearch(query: String) {
+        searchJob?.cancel()
+        if (query.isEmpty()) return
+        val ready = state.value as? ViewerState.Ready ?: return
+        val sheet = ready.sheet
+        val complete = ready.loadProgress == null
+        val names = searchNames
+
+        searchJob = workScope.launch {
+            apply(SearchEvent.Started(query))
+            val results = withContext(Dispatchers.Default) {
+                SheetSearch.run(sheet, query, names, complete) { isActive }
+            } ?: return@launch
+            apply(SearchEvent.Completed(results))
+        }
+    }
+
+    /**
+     * Re-run the current search against a sheet that has just changed.
+     *
+     * Called only from the parse callbacks, which is the only place a new
+     * snapshot can appear. Rows arrive in chunks, so the sheet grows under an
+     * open search; the reducer has already dropped the old matches as stale by
+     * the time this runs, and this puts a fresh count in their place.
+     *
+     * **Re-run quietly rather than refuse.** The alternative — no searching until
+     * the parse completes — means 2.4 seconds of a dead search box on `big-50k`.
+     * A count that moves while the sheet is still loading is honest: the progress
+     * bar is up, and `SearchState.countIsFinal` is false so the UI says the number
+     * is provisional rather than presenting it as the answer.
+     */
+    private fun rescanForNewSheet() {
+        val query = (state.value as? ViewerState.Ready)?.search?.query ?: return
+        if (query.isNotEmpty()) startSearch(query)
     }
 
     /** Re-check which recents can still be opened — call when the list appears. */
@@ -222,6 +304,7 @@ public class ViewerViewModel(
 
         sheetCache[index]?.let { (meta, sheet) ->
             apply(ParseEvent.SheetLoaded(index, meta, sheet))
+            rescanForNewSheet()
             return
         }
 
@@ -231,6 +314,7 @@ public class ViewerViewModel(
                 is WorkbookLoad.Success -> {
                     sheetCache[index] = result.meta to result.sheet
                     apply(ParseEvent.SheetLoaded(index, result.meta, result.sheet))
+                    rescanForNewSheet()
                 }
                 is WorkbookLoad.Failure -> apply(ParseEvent.SheetFailed(result.kind))
             }
@@ -331,6 +415,11 @@ public class ViewerViewModel(
                         progress = partial.progress,
                     ),
                 )
+                // Each chunk supersedes the scan the last one started, so during
+                // a long parse the bar honestly reads "searching" and the answer
+                // lands once the sheet stops moving. Cheap: a cancelled scan
+                // stops within 1,024 cells.
+                rescanForNewSheet()
             }
             if (generation != loadGeneration) return@launch
             when (result) {
@@ -345,6 +434,7 @@ public class ViewerViewModel(
                             "${System.currentTimeMillis() - startedAt} ms",
                     )
                     apply(ParseEvent.Loaded(result.meta, result.sheet))
+                    rescanForNewSheet()
                 }
                 is WorkbookLoad.Failure -> {
                     // Failures are worth timing too: a cap that trips only after

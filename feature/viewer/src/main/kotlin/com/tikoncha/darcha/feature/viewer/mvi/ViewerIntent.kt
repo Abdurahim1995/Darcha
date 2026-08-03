@@ -2,6 +2,7 @@ package com.tikoncha.darcha.feature.viewer.mvi
 
 import com.tikoncha.darcha.feature.viewer.data.SheetSnapshot
 import com.tikoncha.darcha.feature.viewer.data.WorkbookSource
+import com.tikoncha.darcha.feature.viewer.search.SearchResults
 import com.tikoncha.darcha.model.ErrorKind
 
 /**
@@ -77,6 +78,36 @@ public sealed interface ViewerIntent : ViewerEvent {
      */
     public data class SelectCell(public val cell: CellRef?) : ViewerIntent
 
+    /** Open the search bar, or close it and drop its results (T33). */
+    public data class SetSearchOpen(public val open: Boolean) : ViewerIntent
+
+    /**
+     * The query changed.
+     *
+     * A *request*, like [Fling]: the ViewModel owns the scan, cancels the one
+     * this supersedes, and feeds the answer back as [SearchEvent.Completed]. The
+     * reducer never scans — it is a pure function with no I/O and no threads.
+     */
+    public data class SetSearchQuery(public val query: String) : ViewerIntent
+
+    /**
+     * Step to the next match, or the previous one, wrapping at the ends.
+     *
+     * Wrapping is deliberate: a list that stops at the last match makes the
+     * reader wonder whether it is broken or finished. The UI says which happened.
+     */
+    public data class StepMatch(public val forward: Boolean) : ViewerIntent
+
+    /**
+     * Move the viewport to one the renderer computed (T33).
+     *
+     * The same split as [SelectCell], for the same reason: bringing a cell into
+     * view needs column widths, the zoom and the frozen-region origins, all of
+     * which live in the renderer. It resolves the cell with T31 and sends the
+     * answer; the reducer clamps and stores it.
+     */
+    public data class RevealViewport(public val viewport: Viewport) : ViewerIntent
+
     /** Retry the last failed load. */
     public data object Retry : ViewerIntent
 }
@@ -119,6 +150,26 @@ public sealed interface ParseEvent : ViewerEvent {
 
     /** Reading another sheet failed; the current one stays on screen. */
     public data class SheetFailed(public val kind: ErrorKind) : ParseEvent
+}
+
+/**
+ * The outcome of a scan the ViewModel ran (T33).
+ *
+ * Search is a *request* the reducer cannot answer, exactly like a fling or a
+ * parse: it needs a worker and a cancellation, and the reducer has neither. So
+ * it comes back as an event, and the reducer only ever stores facts.
+ */
+public sealed interface SearchEvent : ViewerEvent {
+
+    /** A scan started for [query]. */
+    public data class Started(public val query: String) : SearchEvent
+
+    /**
+     * A scan finished. The results carry the identity of the sheet they scanned,
+     * and the reducer checks it before storing them — a scan that finished after
+     * the sheet moved on is dropped rather than shown.
+     */
+    public data class Completed(public val results: SearchResults) : SearchEvent
 }
 
 /**

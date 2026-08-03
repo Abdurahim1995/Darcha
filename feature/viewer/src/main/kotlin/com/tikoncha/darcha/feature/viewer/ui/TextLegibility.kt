@@ -87,16 +87,22 @@ internal object TextLegibility {
         // Picking the better-contrasting of the theme's two text colours handles
         // both directions and degenerates correctly on an unfilled cell, where
         // `behind` is our own surface and `fallback` wins by construction.
-        if (own == null) {
-            return if (contrastRatio(fallback, behind) >= contrastRatio(fallbackInverse, behind)) {
-                fallback
-            } else {
-                fallbackInverse
-            }
-        }
+        if (own == null) return betterOn(behind, fallback, fallbackInverse)
         if (documentOwnsBackground) return own
         return if (contrastRatio(own, behind) >= MIN_CONTRAST) own else fallback
     }
+
+    /**
+     * Whichever of [a] and [b] can be read on [behind].
+     *
+     * The primitive behind every "the document did not choose, so we must" case
+     * in the app: text with no colour of its own (T28), and search highlights
+     * over a fill the document picked (T33). Both face the same problem — the
+     * background is the author's and the foreground is ours — and both answer it
+     * by measuring rather than by assuming the running theme is right.
+     */
+    fun betterOn(behind: Color, a: Color, b: Color): Color =
+        if (contrastRatio(a, behind) >= contrastRatio(b, behind)) a else b
 
     /**
      * WCAG 2.1 contrast ratio between two opaque colours: `(L1 + 0.05) / (L2 + 0.05)`

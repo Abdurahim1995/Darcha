@@ -112,6 +112,11 @@ class MainActivity : ComponentActivity() {
                         onSelectSheet = { viewModel.dispatch(ViewerIntent.SwitchSheet(it)) },
                         onSelect = { viewModel.dispatch(ViewerIntent.SelectCell(it)) },
                         onStopMotion = { viewModel.stopMotion() },
+                        onSearchOpen = { viewModel.dispatch(ViewerIntent.SetSearchOpen(it)) },
+                        onSearchQuery = { viewModel.dispatch(ViewerIntent.SetSearchQuery(it)) },
+                        onStepMatch = { viewModel.dispatch(ViewerIntent.StepMatch(it)) },
+                        onReveal = { viewModel.dispatch(ViewerIntent.RevealViewport(it)) },
+                        onDateNames = { viewModel.setDateNames(it) },
                         recents = recents.value,
                         onOpenRecent = { id ->
                             viewModel.dispatch(ViewerIntent.OpenFile(sourceFor(Uri.parse(id))))

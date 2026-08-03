@@ -68,4 +68,14 @@
     <!-- Katak tanlash (T29) -->
     <string name="action_copy">Nusxalash</string>
     <string name="copied_to_clipboard">Nusxalandi</string>
+    <!-- Qidiruv (T33) -->
+    <string name="action_search">Qidirish</string>
+    <string name="action_close">Yopish</string>
+    <string name="search_label">Varaqdan topish</string>
+    <string name="search_previous">Oldingi</string>
+    <string name="search_next">Keyingi</string>
+    <string name="search_running">Qidirilmoqda…</string>
+    <string name="search_no_matches">Topilmadi</string>
+    <string name="search_position">%2$d dan %1$d</string>
+    <string name="search_position_partial">%2$d+ dan %1$d</string>
 </resources>

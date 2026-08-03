@@ -56,6 +56,11 @@ public fun ViewerScreen(
     onSelectSheet: (Int) -> Unit = {},
     onSelect: (CellRef?) -> Unit = {},
     onStopMotion: () -> Boolean = { false },
+    onSearchOpen: (Boolean) -> Unit = {},
+    onSearchQuery: (String) -> Unit = {},
+    onStepMatch: (Boolean) -> Unit = {},
+    onReveal: (Viewport) -> Unit = {},
+    onDateNames: (com.tikoncha.darcha.model.DateNames) -> Unit = {},
     recents: List<RecentDocument> = emptyList(),
     onOpenRecent: (String) -> Unit = {},
     onForgetRecent: (String) -> Unit = {},
@@ -76,6 +81,9 @@ public fun ViewerScreen(
     // reads the viewport, and vice versa.
     val selection by remember(state) {
         derivedStateOf { (state.value as? ViewerState.Ready)?.selection }
+    }
+    val search by remember(state) {
+        derivedStateOf { (state.value as? ViewerState.Ready)?.search }
     }
 
     val readySheet = sheet
@@ -100,6 +108,12 @@ public fun ViewerScreen(
             selection = selection,
             onSelect = onSelect,
             onStopMotion = onStopMotion,
+            search = search,
+            onSearchOpen = onSearchOpen,
+            onSearchQuery = onSearchQuery,
+            onStepMatch = onStepMatch,
+            onReveal = onReveal,
+            onDateNames = onDateNames,
             modifier = modifier,
         )
         return

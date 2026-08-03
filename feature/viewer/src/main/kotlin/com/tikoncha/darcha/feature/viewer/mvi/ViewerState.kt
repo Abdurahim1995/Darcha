@@ -1,6 +1,7 @@
 package com.tikoncha.darcha.feature.viewer.mvi
 
 import com.tikoncha.darcha.feature.viewer.data.SheetSnapshot
+import com.tikoncha.darcha.feature.viewer.search.SearchResults
 import com.tikoncha.darcha.model.ErrorKind
 
 /**
@@ -38,6 +39,64 @@ public data class CellRef(
     public val row: Int,
     public val col: Int,
 )
+
+/**
+ * The search bar's state, or `null` when it is closed (T33).
+ *
+ * @property query what the user has typed. May be empty — the bar is open and
+ *   waiting, which is a different state from "no matches".
+ * @property results the matches, or `null` while a scan is in flight or the
+ *   query is empty. **Never holds results for a different sheet:** the reducer
+ *   drops them the moment a new snapshot arrives, which is what stops
+ *   next/previous acting on an index into a sheet that has since grown.
+ * @property currentIndex which match is current, or `-1` when there are none.
+ * @property running whether a scan is in flight, so the UI can say "searching"
+ *   rather than "no matches" while it waits.
+ */
+public data class SearchState(
+    public val query: String = "",
+    public val results: SearchResults? = null,
+    public val currentIndex: Int = -1,
+    public val running: Boolean = false,
+) {
+    /** The cell of the current match, or `null` if there is not one. */
+    public val currentCell: CellRef?
+        get() {
+            val r = results ?: return null
+            if (currentIndex !in 0 until r.size) return null
+            return CellRef(r.rowAt(currentIndex), r.colAt(currentIndex))
+        }
+
+    /** Matches found so far. */
+    public val matchCount: Int get() = results?.size ?: 0
+
+    /**
+     * These results, or a clean slate if they no longer describe [sheet].
+     *
+     * Called wherever a new snapshot lands. A progressive parse produces a new
+     * `SheetData` per chunk, so results computed against the previous one are
+     * stale — and an index into a stale list is exactly how next/previous ends up
+     * scrolling to a cell that moved. Dropping them here means **the state can
+     * never hold results for a sheet other than the one on screen**, so nothing
+     * downstream has to remember to check.
+     *
+     * `running` is set so the UI says "searching" rather than "no matches" in the
+     * gap before the re-run lands.
+     */
+    public fun invalidatedFor(sheet: SheetSnapshot): SearchState =
+        if (results == null || results.isFor(sheet)) {
+            this
+        } else {
+            copy(results = null, currentIndex = -1, running = query.isNotEmpty())
+        }
+
+    /**
+     * Whether the count is final. `false` while a scan runs **or** while the
+     * sheet is still parsing — in both cases more matches may appear, and the UI
+     * must not present the number as complete.
+     */
+    public val countIsFinal: Boolean get() = !running && results?.complete == true
+}
 
 /**
  * What the UI needs to know about an open document without holding its cells.
@@ -93,6 +152,7 @@ public sealed interface ViewerState {
         public val scrollBounds: ScrollBounds = ScrollBounds.UNKNOWN,
         public val loadingSheetId: Int? = null,
         public val loadProgress: Float? = null,
+        public val search: SearchState? = null,
     ) : ViewerState
 
     /**

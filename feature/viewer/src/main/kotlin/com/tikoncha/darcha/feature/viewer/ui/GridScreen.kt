@@ -13,6 +13,7 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
@@ -27,7 +28,9 @@ import com.tikoncha.darcha.feature.viewer.data.SheetSnapshot
 import com.tikoncha.darcha.feature.viewer.mvi.CellRef
 import com.tikoncha.darcha.feature.viewer.mvi.DocumentMeta
 import com.tikoncha.darcha.feature.viewer.mvi.ScrollBounds
+import com.tikoncha.darcha.feature.viewer.mvi.SearchState
 import com.tikoncha.darcha.feature.viewer.mvi.Viewport
+import com.tikoncha.darcha.model.DateNames
 import com.tikoncha.darcha.model.FormattedValueCache
 
 /**
@@ -56,6 +59,12 @@ internal fun GridScreen(
     selection: CellRef?,
     onSelect: (CellRef?) -> Unit,
     onStopMotion: () -> Boolean,
+    search: SearchState?,
+    onSearchOpen: (Boolean) -> Unit,
+    onSearchQuery: (String) -> Unit,
+    onStepMatch: (Boolean) -> Unit,
+    onReveal: (Viewport) -> Unit,
+    onDateNames: (DateNames) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var drawnCells by remember { mutableIntStateOf(0) }
@@ -64,6 +73,10 @@ internal fun GridScreen(
     // with the cell — see SelectionBar for why the *displayed* string is what
     // gets copied.
     val dateNames = rememberDateNames()
+    // Locale lives in the UI (T24) and search formats dates (T32), so the names
+    // have to reach the ViewModel or a search for a month name would match
+    // English while the grid shows Uzbek.
+    LaunchedEffect(dateNames) { onDateNames(dateNames) }
     val formatted = remember(sheet.styles, sheet.sharedStrings, sheet.date1904, dateNames) {
         FormattedValueCache(
             styles = sheet.styles,
@@ -89,6 +102,9 @@ internal fun GridScreen(
                     style = MaterialTheme.typography.labelSmall,
                 )
             }
+            TextButton(onClick = { onSearchOpen(search == null) }) {
+                Text(stringResource(R.string.action_search))
+            }
             TextButton(onClick = onOpenFile) { Text(stringResource(R.string.action_open_short)) }
         }
 
@@ -107,9 +123,23 @@ internal fun GridScreen(
             // A lambda, not a value: the Canvas reads it inside its draw block,
             // so moving the selection repaints without recomposing this Column.
             selection = { selection },
+            // Lambdas, like the viewport: a new match set repaints the grid
+            // without recomposing this Column.
+            matches = { search?.results },
+            currentMatch = search?.currentCell,
+            onReveal = onReveal,
             onSelect = onSelect,
             onStopMotion = onStopMotion,
         )
+
+        if (search != null) {
+            SearchBar(
+                search = search,
+                onQueryChange = onSearchQuery,
+                onStep = onStepMatch,
+                onClose = { onSearchOpen(false) },
+            )
+        }
 
         if (selection != null) {
             SelectionBar(

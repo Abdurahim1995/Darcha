@@ -17,6 +17,7 @@ public object ViewerReducer {
         is ViewerIntent -> reduceIntent(state, event)
         is ParseEvent -> reduceParse(state, event)
         is RenderEvent -> reduceRender(state, event)
+        is SearchEvent -> reduceSearch(state, event)
     }
 
     private fun reduceIntent(state: ViewerState, intent: ViewerIntent): ViewerState =
@@ -71,6 +72,80 @@ public object ViewerReducer {
             // to its anchor (T29), so there is nothing to compute here — which is
             // the point. See ViewerIntent.SelectCell.
             is ViewerIntent.SelectCell -> state.mapReady { it.copy(selection = intent.cell) }
+
+            // T31 already solved for the frozen bands and the margin; clamping
+            // here is belt-and-braces against bounds that changed in between.
+            is ViewerIntent.RevealViewport -> state.mapReady { ready ->
+                ready.copy(viewport = intent.viewport.clampedTo(ready.scrollBounds))
+            }
+
+            // Opening gives an empty bar; closing drops everything, so a stale
+            // match list cannot survive to be reopened against a changed sheet.
+            is ViewerIntent.SetSearchOpen -> state.mapReady {
+                it.copy(search = if (intent.open) it.search ?: SearchState() else null)
+            }
+
+            // The query is recorded here; the scan itself is the ViewModel's, and
+            // comes back as a SearchEvent. Clearing the box clears the results
+            // rather than leaving the previous query's matches lit.
+            is ViewerIntent.SetSearchQuery -> state.mapReady { ready ->
+                val search = ready.search ?: return@mapReady ready
+                ready.copy(
+                    search = search.copy(
+                        query = intent.query,
+                        results = null,
+                        currentIndex = -1,
+                        running = intent.query.isNotEmpty(),
+                    ),
+                )
+            }
+
+            // Wraps at both ends. Selecting the match as well is deliberate: the
+            // cell you just found is the one you want to read and copy, so the
+            // selection bar follows the search (T29).
+            is ViewerIntent.StepMatch -> state.mapReady { ready ->
+                val search = ready.search ?: return@mapReady ready
+                val count = search.matchCount
+                if (count == 0) return@mapReady ready
+                val step = if (intent.forward) 1 else -1
+                val next = ((search.currentIndex + step) % count + count) % count
+                val updated = search.copy(currentIndex = next)
+                ready.copy(search = updated, selection = updated.currentCell)
+            }
+        }
+
+    /**
+     * Search results, and the one rule that keeps them safe.
+     *
+     * A scan runs against one immutable snapshot and can finish after the sheet
+     * has moved on — another chunk arrived, or the user switched sheets. Results
+     * that do not belong to the sheet on screen are **dropped**, not shown: an
+     * index into a list built from different data would send next/previous to a
+     * cell that is no longer there. `SearchResults.isFor` answers by identity, so
+     * this cannot be got wrong by comparing the wrong thing.
+     */
+    private fun reduceSearch(state: ViewerState, event: SearchEvent): ViewerState =
+        state.mapReady { ready ->
+            val search = ready.search ?: return@mapReady ready
+            when (event) {
+                is SearchEvent.Started ->
+                    if (event.query != search.query) ready
+                    else ready.copy(search = search.copy(running = true))
+
+                is SearchEvent.Completed -> when {
+                    // A scan for a query the user has already moved on from.
+                    event.results.query != search.query -> ready
+                    // A scan of a sheet that is no longer the one on screen.
+                    !event.results.isFor(ready.sheet) -> ready
+                    else -> ready.copy(
+                        search = search.copy(
+                            results = event.results,
+                            currentIndex = if (event.results.isEmpty) -1 else 0,
+                            running = false,
+                        ),
+                    )
+                }
+            }
         }
 
     private fun reduceParse(state: ViewerState, event: ParseEvent): ViewerState =
@@ -100,6 +175,9 @@ public object ViewerReducer {
                     docMeta = event.meta,
                     sheet = event.sheet,
                     loadProgress = event.progress.coerceIn(0f, 1f),
+                    // A new chunk is a new SheetData, so any match list computed
+                    // against the previous one is stale — see invalidatedFor.
+                    search = state.search?.invalidatedFor(event.sheet),
                 )
                 // Never resurrect a document the user has moved on from.
                 else -> state
@@ -119,6 +197,9 @@ public object ViewerReducer {
                     docMeta = event.meta,
                     sheet = event.sheet,
                     loadProgress = null,
+                    // The final snapshot is a different SheetData again, so the
+                    // partial's results are stale even though nothing "changed".
+                    search = state.search?.invalidatedFor(event.sheet),
                 )
                 else -> state
             }
@@ -142,6 +223,9 @@ public object ViewerReducer {
                     selection = null,
                     scrollBounds = ScrollBounds.UNKNOWN,
                     loadingSheetId = null,
+                    // Search is per-sheet (T32), so the bar stays open with its
+                    // query but its matches belong to the sheet the reader left.
+                    search = ready.search?.invalidatedFor(event.sheet),
                 )
             }
 
@@ -177,6 +261,12 @@ public object ViewerReducer {
  * Deltas arrive already converted from screen to content pixels — the caller
  * divides by zoom, per TECH_SPEC §9.2.
  */
+/** This viewport with its scroll held inside [bounds]. */
+internal fun Viewport.clampedTo(bounds: ScrollBounds): Viewport = copy(
+    scrollX = scrollX.coerceIn(bounds.minScrollX, maxOf(bounds.minScrollX, bounds.maxScrollX)),
+    scrollY = scrollY.coerceIn(bounds.minScrollY, maxOf(bounds.minScrollY, bounds.maxScrollY)),
+)
+
 internal fun Viewport.scrolledBy(dx: Float, dy: Float, bounds: ScrollBounds): Viewport = copy(
     scrollX = clampScroll(scrollX + dx, bounds.minScrollX, bounds.maxScrollX),
     scrollY = clampScroll(scrollY + dy, bounds.minScrollY, bounds.maxScrollY),

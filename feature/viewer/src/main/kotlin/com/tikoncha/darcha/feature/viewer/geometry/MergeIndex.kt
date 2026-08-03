@@ -74,6 +74,23 @@ internal class MergeIndex private constructor(
      * of a merged title must select the title, not an empty cell (T20 wires the
      * gesture; the mapping lives here).
      */
+    /**
+     * The merged range containing ([row], [col]), or that single cell as a 1x1
+     * range when it is not merged.
+     *
+     * Lets a caller treat "a cell" and "a merged block" the same way — T31 frames
+     * whatever range it is handed, so scrolling to a match inside a merged title
+     * brings the whole title into view rather than a third of it.
+     */
+    fun rangeOf(row: Int, col: Int): CellRange {
+        val index = indexOf(row, col)
+        return if (index < 0) {
+            CellRange(row, col, row, col)
+        } else {
+            CellRange(startRows[index], startCols[index], endRows[index], endCols[index])
+        }
+    }
+
     fun anchorOf(row: Int, col: Int): CellRef {
         val i = indexOf(row, col)
         return if (i == NONE) CellRef(row, col) else CellRef(startRows[i], startCols[i])
