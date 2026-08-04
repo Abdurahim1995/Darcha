@@ -229,7 +229,9 @@ public fun GridCanvas(
                     } else if (lastSpread > 0f && spread > 0f) {
                         val current = viewport()
                         onZoom(
-                            spread / lastSpread,
+                            // The raw ratio is correct but far too direct for a
+                            // 0.5..3.0 range — see PinchGain.
+                            dampedPinchScale(spread / lastSpread),
                             focalX(centroid.x, rowHeaderWidth, panes.frozenWidth(current)),
                             focalY(centroid.y, columnHeaderHeight, panes.frozenHeight(current)),
                         )

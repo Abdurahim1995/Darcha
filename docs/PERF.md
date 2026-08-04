@@ -103,6 +103,72 @@ in the system file picker**. Both the list and the search results ignore
 quirk on this A31, not an app behaviour — the same taps drive Darcha's own UI
 fine.
 
+### Pinch gain — the maths was right, the mapping was not (T35)
+
+Reported from a screen recording on the HONOR (Android 16, 520 dpi): `big-50k`
+at rest shows ~24 rows, half a second into a pinch ~9 rows (~2.7x), and within
+~2 s it is pinned at the 3.0 ceiling. Zoom-out the same in reverse.
+
+**The three things checked before changing anything.**
+
+1. **Which form the ratio takes.** The gesture loop reports
+   `spread / lastSpread` with `lastSpread` updated on every event — the
+   *incremental* ratio — and the reducer does `zoom * scale`. So the chain is
+   `current × (current/previous)`, the correct non-compounding form, **not**
+   `current × (current/initial)`. A whole pinch telescopes to
+   `dEnd / dStart`.
+2. **Whether anything multiplies the ratio.** Nothing does. The path is
+   `onZoom(ratio)` → `ViewerIntent.Zoom(scale)` → `zoomedAt` →
+   `(zoom * scale).coerceIn(0.5f, 3.0f)`, with exactly one dispatch site.
+   Also ruled out: `Modifier.pointerInput(geometry, panes)` does **not** restart
+   mid-pinch, because `GridGeometry` holds no zoom — so the baseline is never
+   silently re-taken.
+3. **So it is genuinely gain**, and the reason is the range rather than the
+   code. A 1:1 finger-ratio-to-zoom-ratio mapping is what photo viewers use, and
+   it works there because their range is 20x or more. Here it is 3x upward, while
+   a hand on a 6 cm-wide phone produces a 4–6x spread ratio without trying. One
+   ordinary gesture therefore spent the whole range.
+
+**The fix: an exponent on each increment, `γ = 0.5`.** See `PinchGain.kt` for
+the derivation. The short version is that `r^γ` **telescopes** —
+`∏(dᵢ/dᵢ₋₁)^γ = (dEnd/dStart)^γ` — so the zoom depends only on where the fingers
+started and stopped, never on how many pointer events arrived. The obvious
+alternative, `1 + (r-1)k`, is a sum in disguise: measured over the same 200→600
+px travel reported as 2 events versus 40, the exponent moves by **1e-7** and the
+linear form by **0.143**, so the same gesture would zoom differently on the 60 Hz
+A31 and the 120 Hz HONOR. Both numbers are asserted as a test.
+
+**Measured end to end on the HONOR**, replaying realistic finger distances
+(180 px → 1080 px, a 6x spread) through the real gesture → intent → reducer path
+at four focal points, in and back out, 80 zoom events:
+
+| | zoom reached by a 6x spread | max focal drift |
+|---|---|---|
+| before (raw ratio) | **0.500 … 3.000** — the whole range, both ends clamped | 276 content px |
+| after (γ = 0.5) | **1.000 … 2.449** = `6^0.5` | 1.22e-4 content px |
+
+**T20's focal promise survives.** Drift is **exactly 0.0 on 122 of 160 axis
+readings**, and on the rest never more than 2 units in the last place of the
+content coordinate itself — the largest, 1.22e-4, is precisely one float ULP at
+`content = 1800.0`. That is zero to the precision the number is stored in, not a
+small residue. T20 recorded a flat 0.0 because its sweep ran at smaller
+coordinates where the ULP is finer; the arithmetic is unchanged.
+
+**One honest note on the control row.** The 276 px in the "before" row is *not*
+something damping fixed. All nine large-drift events are at the extreme focal
+point `(1079, 1800)` on a sheet only 7 columns wide: the compensation would have
+to scroll past the end of the sheet, so it is clamped, and the focal point yields
+to the bounds. That is deliberate and already covered by
+`theCompensationRespectsTheScrollCeiling`. Damping simply does not swing the zoom
+far enough to reach it in this sweep — worth knowing, not a claim of a second fix.
+
+**Still not covered on device: a real two-finger pinch.** Neither retail phone
+allows `sendevent`, and `adb shell input` has no multi-touch, so the centroid and
+spread computation is still verified by code review only — the same limitation
+recorded under T20. Everything downstream of it is measured. **The feel is the
+owner's call**, and `PINCH_GAIN` in `PinchGain.kt` is the single number to turn:
+lower is slower.
+
 ### v1.2.0 release verification
 
 The whole point of running this against the **release** build is that R8 and

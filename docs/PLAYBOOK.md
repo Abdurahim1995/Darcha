@@ -171,6 +171,10 @@ Prerequisites in repo: `CLAUDE.md` (root), `docs/TECH_SPEC.md`, this file.
 > The release verification is in `docs/PERF.md`. Two things it is worth carrying forward. First, the **strings check comes before anything else** now: T26 lost three error strings to R8 without a word, so every one of v1.2's eleven new strings is proved present in the shipping APK, in both locales, before the device is touched. Second, the two-level highlight over the document's yellow fill was **measured out of the screenshot pixels** rather than judged by eye — at thumbnail scale a wash over a saturated fill is genuinely unreadable, and this is the second time in this project that a small crop nearly passed something wrong.
 >
 > The TSV was likewise checked against the fixture's XML, not against what the screen suggested: `merged.xlsx` puts `Side` and `Block` both on row 2, and the renderer draws them lower because merged text is centred in its block. An eyeball check would have called the correct output a bug.
+>
+> **T35 — pinch gain, after v1.2.0 shipped.** Reported from a screen recording: one ordinary spread ran the whole 0.5–3.0 range, with no way to settle in between. **The arithmetic was not the bug** — the loop reports the incremental ratio `spread / lastSpread` and the reducer multiplies, which is the correct non-compounding form, and nothing in the chain scales the ratio. The mismatch was between the gesture's dynamic range and the zoom's: a 1:1 mapping over a range only 3x wide upward, against a hand that produces 4–6x without trying.
+>
+> Fixed by raising each increment to `γ = 0.5`, because the exponent is the one form that **telescopes** — the zoom then depends only on where the fingers started and stopped, not on the event rate, which matters directly here since the two test devices run at 60 Hz and 120 Hz. Measured on the HONOR: a 6x spread now reaches `6^0.5 = 2.449` instead of clamping at 3.0, and T20's focal drift is still zero to float precision. `PINCH_GAIN` is the single number to turn.
 
 
 ---

@@ -530,6 +530,27 @@ Left as it was, header *labels* scaled with zoom inside a fixed-size strip, so
 they overflowed it above about zoom 1.5. That is fixed as part of this decision,
 not discovered during it.
 
+**Pinch gain is a square root, not 1:1 (T35).** The gesture loop reports the
+incremental spread ratio and the reducer multiplies by it, so an undamped pinch
+telescopes to `dEnd / dStart` — the finger-distance ratio itself. That is what a
+photo viewer does, and it works there because the zoom range is 20x or more.
+Here the range is **3x upward**, while a hand on a phone produces a 4–6x spread
+without effort, so one ordinary gesture spent the whole range and there was no
+way to stop in between.
+
+Each increment is therefore raised to `PINCH_GAIN = 0.5`. The exponent is the
+only form that **telescopes** — `∏(dᵢ/dᵢ₋₁)^γ = (dEnd/dStart)^γ` — so the zoom
+depends on where the fingers started and stopped and not on how many pointer
+events arrived; a factor on the delta is a sum in disguise and would zoom
+differently at 60 Hz and 120 Hz. It also keeps the gesture exactly reversible.
+Stated as behaviour: **to double the zoom, spread your fingers four times as
+far.**
+
+It is applied in the gesture loop, not the reducer. The reducer's contract stays
+"multiply the zoom by this scale", which double-tap reset depends on — that
+animation computes its own scales and feeds them in as ordinary `Zoom` intents,
+so damping there would bend the animation rather than the gesture.
+
 **Zoom is quantized for measurement.** The text cache keys on a zoom bucket of
 0.1, and a layout is measured at the **bucket's** zoom rather than the exact one.
 Measuring at the exact zoom would make a cached layout depend on which zoom
