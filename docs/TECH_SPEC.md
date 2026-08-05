@@ -1,12 +1,12 @@
 # Darcha — XLSX Viewer for Android
 
-**Technical Specification · v1.0**
+**Technical Specification · covers v1.0 through v1.2**
 
 | | |
 |---|---|
-| Status | Approved — ready for M1 |
+| Status | Approved — M1–M6 complete, shipped through v1.2.0 |
 | Owner | Tikoncha |
-| Last updated | 2026-07-14 |
+| Last updated | 2026-08-05 |
 | Working title | **Darcha** (*"little window" in Uzbek*) |
 
 ---
@@ -31,6 +31,12 @@ Existing options are either heavy and ad-driven (Microsoft 365) or cloud-oriente
 - Merged cells and frozen panes
 - Formula cells display their **cached values** (no evaluation)
 - Graceful, human-readable errors: corrupted files, password-protected files, unsupported formats
+
+These are the **v1.0** goals and they are all met. Scope added since is recorded
+where it was decided — §9 for the viewer behaviour (cell and range selection,
+TSV copy, search, scroll-to-cell) and §11 for the milestones that carried it.
+This section is left as the v1.0 record rather than rewritten, so the original
+scope stays legible.
 
 ## 4. Non-goals (v1.0)
 
@@ -614,6 +620,11 @@ only the second is worth a Retry button.
 | **M2** | Raw grid on screen | Canvas grid renders values; 2D scroll + fling; sheet tabs. A 50k-row file scrolls smoothly on a mid-range device. |
 | **M3** | Fidelity | Fonts/fills/alignment, number & date formatting, merged cells, frozen panes, pinch zoom. |
 | **M4** | Product polish | `ACTION_VIEW` intent filter, SAF picker, recent files, error states, app icon, README with GIFs + measured metrics, CI badge, release APK on GitHub Releases. |
+| **M5** | v1.1 | A renamed `.ods` reports "not supported" rather than "damaged"; the theme-colour-vs-black distinction carried properly so text is legible in both themes; tap a cell to select and copy it. Fixture corpus locked against real Google Sheets exports. |
+| **M6** | v1.2 | Search within the active sheet — count, next/previous with wrapping, two-level highlight — on a scroll-to-cell that cannot park a target under a frozen band; range selection by long-press and drag, copied as TSV, with merges expanding to whole merges. |
+
+`:core:parser` was frozen at the end of M4 and unfrozen only for named tasks;
+`docs/PLAYBOOK.md` records each milestone's tasks and what they cost.
 
 ## 12. Testing strategy
 
@@ -631,7 +642,7 @@ only the second is worth a Retry button.
 | Huge files → OOM | Streaming parse, sparse model, explicit size and cell-count caps with a friendly `TooLarge` error — limits and enforcement in §9.1 |
 | Motivation drift (portfolio project) | Milestone acceptance criteria; a runnable build ships at M2, not at the end |
 
-## 14. Future (post-v1 candidates)
+## 14. Future candidates (nothing here is scheduled)
 
 - DOCX viewer via HTML → WebView (a deliberate second rendering strategy)
 - Text selection *within* a cell — dragging across characters.
@@ -643,4 +654,5 @@ only the second is worth a Retry button.
 
 ---
 
-*This document is the single source of truth for v1.0 scope. Changes to scope require editing this file first.*
+*This document is the single source of truth for the project's scope. Changes
+to scope require editing this file first.*
