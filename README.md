@@ -4,7 +4,7 @@
 [![INTERNET permission: none](https://img.shields.io/badge/INTERNET%20permission-none-success)](#no-network-by-construction)
 
 A fast, private, ad-free Android viewer for `.xlsx` files. It shows the first
-cells of a 50,000-row spreadsheet in **175 ms**, ships as a **1.10 MB** APK, and
+cells of a 50,000-row spreadsheet in **175 ms**, ships as a **1.27 MB** APK, and
 **cannot send your file anywhere** — there is no `INTERNET` permission in the
 manifest.
 
@@ -24,7 +24,11 @@ manifest.
 - Number and date formatting, including Excel's 1900 leap-year bug
 - Merged cells and frozen panes
 - Pinch zoom, fling scrolling, recent files
-- Tap a cell to select it and copy its value
+- Search within the sheet: match count, next/previous with wrapping, and a
+  highlight that marks every match and the current one differently
+- Tap a cell to select it; long-press and drag to select a range
+- Copy a cell as text, or a range as TSV — it pastes into a spreadsheet as
+  cells, not as one string
 - English and Uzbek; light and dark
 
 ## What it deliberately does not do
@@ -78,8 +82,8 @@ Every number below comes from a **Samsung Galaxy A31** — a mid-range phone fro
 | Scroll frame time, median — release build / debug build | **12 ms** / 15–18 ms |
 | Scroll frame time, 90th percentile | 18 ms / 23–30 ms |
 | Cells drawn per frame, whatever the sheet size | **259** |
-| APK, signed, R8 + resource shrinking | **1.10 MB** |
-| Tests | **385** |
+| APK, signed, R8 + resource shrinking | **1.27 MB** |
+| Tests | **467** |
 
 **On frame times.** The 60 fps budget is 16.7 ms. The *median* frame fits inside
 it and the 90th percentile does not, so this page is not going to claim "60 fps"
@@ -88,8 +92,9 @@ are flagged as high-input-latency whatever the renderer does, and the device
 drifts thermally over a long session — `docs/PERF.md` records both, and says
 where that made one comparison inconclusive.
 
-**On the APK.** 1.10 MB is the signed release build, with R8 and resource
-shrinking on in the committed config — against the spec's 5 MB budget. It needs
+**On the APK.** 1.27 MB is the signed release build of v1.2.0, with R8 and
+resource shrinking on in the committed config — against the spec's 5 MB budget.
+It grew from 1.10 MB at v1.0.0 as search and range selection landed. It needs
 **no keep rules of our own**: `:core:model` and `:core:parser` use no reflection
 and no serialization framework, so R8 can see the whole call graph.
 [`app/proguard-rules.pro`](app/proguard-rules.pro) is almost empty and explains
@@ -114,7 +119,7 @@ graph LR
 
 Dependencies run one way only: `:app → :feature:viewer → :core:parser →
 :core:model`. The two `:core` modules have **no Android dependency at all** —
-they are plain JVM Kotlin, which is why 165 of the tests run in seconds on the
+they are plain JVM Kotlin, which is why 166 of the tests run in seconds on the
 JVM, with no emulator anywhere.
 
 State flows one way too: `Intent → reduce → State → render`, through a single
@@ -196,8 +201,8 @@ black on the author's yellow is a pairing, not an accident.
 
 ## Testing
 
-**385 tests** — 38 in `:core:model`, 127 in `:core:parser`, 220 in
-`:feature:viewer`. The 165 in `:core:*` are pure JVM and need no emulator.
+**467 tests** — 38 in `:core:model`, 128 in `:core:parser`, 301 in
+`:feature:viewer`. The 166 in `:core:*` are pure JVM and need no emulator.
 
 The parser is fixture-driven and the rule is absolute: **no fixture, no
 feature.** Every parser capability ships with a real `.xlsx` file and
@@ -247,7 +252,8 @@ setup and the release checklist.
 Post-v1 candidates, from [TECH_SPEC §14](docs/TECH_SPEC.md):
 
 - DOCX viewer via HTML → WebView — a deliberate second rendering strategy
-- In-sheet search, and text selection *within* a cell
+- Text selection *within* a cell, and search across every sheet at once
+  (search today covers the sheet you are on)
 - Basic charts and embedded images
 - F-Droid publication
 
@@ -260,7 +266,7 @@ process is deliberate and auditable:
   [docs/TECH_SPEC.md](docs/TECH_SPEC.md) before any code is written. It is the
   single source of truth — changing scope means editing the spec first.
 - **Task-by-task playbook.** Work follows [docs/PLAYBOOK.md](docs/PLAYBOOK.md),
-  a fixed sequence of small tasks (T0 → T26). **One task = one commit**, so the
+  a fixed sequence of small tasks (T0 → T35). **One task = one commit**, so the
   git history reads as a step-by-step build log.
 - **Claude Code as the implementation agent.** Claude Code writes the diffs;
   **every diff is human-reviewed** before it lands. All architectural decisions

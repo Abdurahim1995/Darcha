@@ -634,8 +634,10 @@ only the second is worth a Retry button.
 ## 14. Future (post-v1 candidates)
 
 - DOCX viewer via HTML → WebView (a deliberate second rendering strategy)
-- In-sheet search, and text selection *within* a cell — dragging across characters.
-  (Cell selection and copy shipped in v1.1, T29; §9 has the reasoning.)
+- Text selection *within* a cell — dragging across characters.
+  (Cell selection and copy shipped in v1.1, T29; in-sheet search and range
+  selection with TSV copy shipped in v1.2, T32–T34; §9 has the reasoning.)
+- Search across every sheet at once. Today it covers the active sheet only.
 - Basic charts, embedded images
 - F-Droid publication
 
