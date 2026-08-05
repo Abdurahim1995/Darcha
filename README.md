@@ -49,15 +49,20 @@ spreadsheet, and it takes one file to verify.
 
 ## Screenshots
 
-Captured on the test device: Samsung Galaxy A31, Android 10.
+<p align="center">
+  <img src="docs/images/darcha-demo.gif" alt="Darcha opening a 50,000-row spreadsheet: the file picker, rows filling in as the file is parsed, sideways scrolling, and pinch zoom" width="240">
+</p>
+
+<p align="center">
+  <em>Nine seconds: picking a file, 50,000 rows arriving as they parse, scrolling sideways, pinch zoom.</em><br>
+  <sub>Recorded before the pinch damping now on <code>main</code>, so the zoom runs through its range faster here than in the current build.</sub>
+</p>
+
+Stills, captured on the test device — Samsung Galaxy A31, Android 10:
 
 | Merged cells | Frozen panes | Dark mode | Error states | Recents, in Uzbek |
 |---|---|---|---|---|
 | <img src="docs/images/merged-cells.png" alt="A sheet with merged cells" width="160"> | <img src="docs/images/frozen-panes.png" alt="A sheet scrolled with the first rows and columns frozen" width="160"> | <img src="docs/images/dark-mode.png" alt="A styled sheet in dark mode" width="160"> | <img src="docs/images/error-encrypted.png" alt="The error screen for a password-protected file" width="160"> | <img src="docs/images/home-uz-dark.png" alt="The home screen in Uzbek, showing recent files" width="160"> |
-
-<!-- GIF SLOT ─ drop an animated capture here once recorded, e.g.:
-     ![Scrolling 50,000 rows](docs/images/scroll.gif)
-     Stills cannot show motion, and scrolling is the part worth seeing. -->
 
 ## Measured
 
