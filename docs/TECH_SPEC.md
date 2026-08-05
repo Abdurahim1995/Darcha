@@ -50,11 +50,29 @@ Deliberately small. Each item above is a candidate for post-v1, not scope creep 
 
 ## 5. Product principles (measurable)
 
-1. **Time-to-first-cell < 1 s** for typical files (< 5 MB) on a mid-range device
-2. **60 fps scroll** on a mid-range device
-3. **APK < 5 MB**
-4. **Zero network** — no `INTERNET` permission in the manifest
-5. **Every parser feature is fixture-tested** — no fixture, no feature
+These are **targets**, not claims. Where the current build stands against each is
+recorded beside it, because a target a reader mistakes for a result is worse than
+no target. All figures are from the Samsung Galaxy A31, a mid-range phone from
+2020; the method, the raw runs and the caveats are in
+[docs/PERF.md](PERF.md).
+
+1. **Time-to-first-cell < 1 s** for typical files (< 5 MB) on a mid-range device.
+   **Met on everything measured** — 175 ms for `big-50k-rows.xlsx`, 86–116 ms for
+   small files, all inside 250 ms. Note the largest file ever measured is
+   **1.78 MB**, so the target is unverified over the upper half of its own range.
+2. **60 fps scroll** on a mid-range device. **Partly met, and the gap is real.**
+   The 60 fps budget is 16.7 ms per frame; the signed release build measures
+   **12 ms median and 18 ms at the 90th percentile** on `big-50k-rows.xlsx`. So
+   the typical frame fits the budget and the 90th does not — the crossover lies
+   somewhere between them, and percentiles at 50 and 90 do not pin it any closer
+   than that. This project does not claim 60 fps on the strength of a median, and
+   neither does the README.
+3. **APK < 5 MB**. **Met** — v1.2.0 is **1.27 MB** signed, with R8 and resource
+   shrinking, and no keep rules of our own.
+4. **Zero network** — no `INTERNET` permission in the manifest. **Met, and
+   structural**: `aapt2 dump permissions` on the shipped APK lists none.
+5. **Every parser feature is fixture-tested** — no fixture, no feature. **Held**;
+   this is a rule rather than a number, enforced in review and in §12.
 
 ## 6. Architecture
 
