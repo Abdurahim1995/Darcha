@@ -680,6 +680,87 @@ def gen_big_merged() -> None:
     print(f"    ({ROWS} rows, {1 + ROWS // SECTION_EVERY} merges, NOT committed)")
 
 
+def gen_big_5mb() -> None:
+    """A ~4.7 MB sheet — the upper end of the §5 "typical files (< 5 MB)" target.
+
+    That target was written for files up to 5 MB and, until this file existed,
+    had only ever been measured up to 1.78 MB. This closes the untested half.
+
+    **Wide, not deep — 40 columns x 11,500 rows.** Two reasons, and the first is
+    the one that decided it. The parser emits the first ~200 rows immediately
+    (TECH_SPEC §7), so on a 40-column sheet that first chunk carries **8,000
+    cells** rather than the 1,400 a 7-column sheet would give it: at this size
+    the interesting question is what the *first paint* costs, and a wide sheet
+    asks it far harder. Deep-and-narrow would have needed roughly 64,000 rows of
+    7 columns for the same bytes and tested the same path with a fifth of the
+    work up front. Second, a 5 MB business spreadsheet is wide in real life.
+
+    **Staying under the cap was a content problem, not a shape one.** Cells are
+    `rows x cols` whichever way the sheet leans, so the only way to reach 5 MB
+    with room to spare is to make each cell cost more bytes — which means text.
+    `big-50k-rows.xlsx` is mostly numeric and runs about 5 bytes per cell, so
+    5 MB of it would be ~950,000 cells, within a whisker of the 1,000,000 cap
+    (§9.1) — a `TooLarge` test wearing a parse-speed costume. Every third column
+    here is a multi-word description, which measures ~11 bytes per cell and puts
+    4.7 MB at **460,000 cells, 46% of the cap**.
+
+    Text is drawn from a fixed vocabulary with a pinned seed, so the file is
+    byte-reproducible, and it is Uzbek because that is what this app's files
+    look like — it also keeps multi-byte UTF-8 in the hot path.
+
+    Deliberately **not** committed, like the other measurement aids: 4.7 MB
+    would nearly quadruple the corpus for no assertion. Generate it, measure,
+    delete. See docs/PERF.md.
+    """
+    import random
+
+    from openpyxl import Workbook as WriteOnlyWorkbook
+
+    ROWS = 11_500
+    COLUMNS = 40
+    DESCRIPTION_EVERY = 3
+    WORDS = (
+        "Toshkent", "Samarqand", "Buxoro", "Andijon", "Farg'ona", "Namangan",
+        "Qarshi", "Nukus", "Xiva", "hisobot", "oylik", "kirim", "chiqim",
+        "qoldiq", "jami", "filial", "ombor", "yetkazib berish", "shartnoma",
+        "to'lov", "balans", "mijoz", "mahsulot", "narx", "miqdor", "sana",
+        "izoh", "holat", "tasdiqlangan", "kutilmoqda",
+    )
+
+    rng = random.Random(20260805)
+    wb = WriteOnlyWorkbook(write_only=True)
+    ws = wb.create_sheet("Data")
+    ws.append([f"ustun_{c}" for c in range(1, COLUMNS + 1)])
+    for i in range(1, ROWS + 1):
+        row = []
+        for c in range(COLUMNS):
+            if c % DESCRIPTION_EVERY == 0:
+                words = " ".join(rng.choice(WORDS) for _ in range(rng.randint(6, 12)))
+                row.append(f"{words} #{i}")
+            elif c % 5 == 1:
+                row.append(round(rng.random() * 10_000, 2))
+            elif c % 5 == 2:
+                row.append(rng.randint(1, 999_999))
+            elif c % 5 == 3:
+                row.append(f"{rng.choice(WORDS)}-{rng.randint(1000, 9999)}")
+            else:
+                row.append(rng.choice(WORDS))
+        ws.append(row)
+    wb.properties.creator = "Darcha fixture generator"
+    wb.properties.created = _PINNED
+    wb.properties.modified = _PINNED
+
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    path = OUT_DIR / "big-5mb-wide.xlsx"
+    wb.save(path)
+    cells = (ROWS + 1) * COLUMNS
+    size = path.stat().st_size
+    print(
+        f"  wrote {path.relative_to(REPO_ROOT)}  "
+        f"({size / 1048576:.2f} MB, {ROWS} rows x {COLUMNS} cols = {cells:,} cells, NOT committed)"
+    )
+
+
 def main() -> None:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     if "big" in sys.argv[1:]:
@@ -688,6 +769,7 @@ def main() -> None:
         gen_big_50k_wide()
         gen_styled_20k()
         gen_big_merged()
+        gen_big_5mb()
         print("Done.")
         return
     print(f"Generating synthetic fixtures into {OUT_DIR.relative_to(REPO_ROOT)} ...")

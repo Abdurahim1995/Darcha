@@ -57,9 +57,11 @@ no target. All figures are from the Samsung Galaxy A31, a mid-range phone from
 [docs/PERF.md](PERF.md).
 
 1. **Time-to-first-cell < 1 s** for typical files (< 5 MB) on a mid-range device.
-   **Met on everything measured** — 175 ms for `big-50k-rows.xlsx`, 86–116 ms for
-   small files, all inside 250 ms. Note the largest file ever measured is
-   **1.78 MB**, so the target is unverified over the upper half of its own range.
+   **Met across the whole range, including the top of it** — 86–116 ms for small
+   files, 175 ms at 1.78 MB, and **344 ms at 4.86 MB**, about a third of the
+   budget. The 4.86 MB file was built for this measurement because the range had
+   only ever been tested to 1.78 MB; it is 460,040 cells, deliberately 46% of the
+   1,000,000-cell cap (§9.1) so that it measures parse speed and not the cap.
 2. **60 fps scroll** on a mid-range device. **Partly met, and the gap is real.**
    The 60 fps budget is 16.7 ms per frame; the signed release build measures
    **12 ms median and 18 ms at the 90th percentile** on `big-50k-rows.xlsx`. So

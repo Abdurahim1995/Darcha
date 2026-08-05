@@ -657,12 +657,47 @@ Two numbers matter, and they are no longer the same thing (T15.5):
 | `multisheet.xlsx` | 5.8 KB | 1 row × 3 sheets | — | **86 ms** |
 | `values-basic.xlsx` | 4.9 KB | 4 rows × 3 cols | — | **116 ms** |
 | `big-50k-rows.xlsx` | 1.78 MB | 50,001 rows × 7 cols ≈ 350k cells | **175 ms** (223 / 159 / 175) | **2,380 ms** (2,773 / 2,442 / 2,380) |
+| `big-5mb-wide.xlsx` | **4.86 MB** | 11,501 rows × 40 cols = 460,040 cells | **344 ms** (314 / 316 / 344) | **3,854 ms** (3,822 / 3,663 / 3,854) |
 
 Small files finish before a partial emission is ever due, so first-cells and
-complete are the same moment for them.
+complete are the same moment for them. Three runs each; the bolded figure is the
+**last** run, the warm one — the first pays for class loading and is kept
+visible rather than dropped.
 
-**Against the §5 target (< 1 s for typical files under 5 MB): met.** Everything
-measured shows its first cells inside 250 ms.
+**Against the §5 target (< 1 s for typical files under 5 MB): met, and now
+measured at the top of that range.** First cells land in **344 ms on a 4.86 MB
+file**, about a third of the budget, on the same 2020 mid-range phone as every
+other number here. Zero crashes across the runs.
+
+### Why a 4.86 MB fixture had to be built, and how it is shaped
+
+Until this measurement the target said "< 5 MB" and the largest file ever run
+was **1.78 MB** — the upper half of its own range was an untested claim. The
+spec now says what was measured instead of implying the whole range.
+
+**The trap was the cell cap, and it is a content problem rather than a shape
+one.** A sheet has `rows × cols` cells whichever way it leans, so the only way to
+reach 5 MB with room under the **1,000,000-cell cap** (§9.1) is to spend more
+bytes per cell. `big-50k-rows.xlsx` is mostly numeric and costs about 5 bytes per
+cell, so 5 MB of the same material would be roughly **950,000 cells** — within a
+whisker of the cap, which would have made this a `TooLarge` test wearing a
+parse-speed costume. Every third column here is instead a multi-word Uzbek
+description, measured at ~11 bytes per cell, which puts 4.86 MB at **460,040
+cells — 46% of the cap**. The parse completes normally; no `TooLarge`.
+
+**Wide (40 columns × 11,500 rows), not deep**, and the reason is the metric
+itself. The parser emits the first ~200 rows immediately (TECH_SPEC §7), so on a
+40-column sheet that first chunk carries **8,000 cells** where a 7-column sheet
+would hand it 1,400. Time-to-first-cell is exactly the number this fixture
+exists to stress, so the shape that loads the first paint hardest is the honest
+one. Deep-and-narrow would have needed ~64,000 rows of 7 columns for the same
+bytes and asked the same question with a fifth of the work up front. A 5 MB
+business spreadsheet is also wide in real life.
+
+The complete parse takes **3.85 s**, up from 2.38 s for `big-50k-rows.xlsx`.
+§5 sets no target for it — the progress bar is up and the sheet is already
+readable — but it is recorded because a number nobody writes down is a number
+nobody notices growing.
 
 ### Before and after T15.5
 
@@ -872,12 +907,20 @@ measure, then delete it:
 python3 tools/gen_fixtures.py big
 ```
 
-That writes `big-50k-rows.xlsx` plus three measurement aids: `big-50k-wide.xlsx`
-(T15.6 layout), `styled-20k.xlsx` (T17 styling and cache) and `big-merged.xlsx`
-(T18 merges arriving late). Push
+That writes `big-50k-rows.xlsx` plus four measurement aids: `big-50k-wide.xlsx`
+(T15.6 layout), `styled-20k.xlsx` (T17 styling and cache), `big-merged.xlsx`
+(T18 merges arriving late) and `big-5mb-wide.xlsx` (the top of the §5 size
+range — 4.86 MB, 460,040 cells, byte-reproducible from a pinned seed). Push
 the wide one, open it, and screenshot once while the progress bar is still up and
 once after it disappears; the grid body of the two frames must be identical.
 
-None of the three is committed — they are measurement aids, not golden fixtures,
+None of the four is committed — they are measurement aids, not golden fixtures,
 and together they would multiply the size of the corpus several times over for no
 assertion. Delete them when the measurement is done.
+
+Timing is read from the debug build only: `Log.d` is stripped in release, so the
+`Darcha.Viewer` lines these numbers come from do not exist in a shrunk build.
+
+```bash
+adb logcat -s Darcha.Viewer | grep -E "first cells|loaded "
+```
